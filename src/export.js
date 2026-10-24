@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildSVG, svgToPNG } from './svg.js';
 import { assetElements } from './session.js';
-import { classify } from './detect.js';
 
 export function cropBox(asset, pad) {
   const [x0, y0, x1, y1] = asset.bbox;
@@ -14,8 +13,8 @@ export function cropBox(asset, pad) {
 }
 
 /** Render one asset to an SVG string. */
-export function renderAssetSVG(page, asset, { pad = 1, roles, idPrefix = '' } = {}) {
-  const els = assetElements(page, asset, roles);
+export function renderAssetSVG(page, asset, { pad = 1, idPrefix = '' } = {}) {
+  const els = assetElements(page, asset);
   return buildSVG(page, els, cropBox(asset, pad), { idPrefix });
 }
 
@@ -29,7 +28,6 @@ export function exportSession(parsed, session, opts) {
   const pad = opts.pad ?? session.options.pad;
   fs.mkdirSync(out, { recursive: true });
   const pages = new Map(parsed.pages.map((p) => [p.page, p]));
-  const roles = new Map();
   const written = [];
   const used = new Set();
 
@@ -37,8 +35,7 @@ export function exportSession(parsed, session, opts) {
     if (asset.exclude) continue;
     const page = pages.get(asset.page);
     if (!page) continue; // page not loaded (filtered)
-    if (!roles.has(page.page)) roles.set(page.page, classify(page, session.options));
-    const els = assetElements(page, asset, roles.get(page.page));
+    const els = assetElements(page, asset);
     if (!els.length) {
       written.push({ id: asset.id, name: asset.name, skipped: 'no elements inside box' });
       continue;

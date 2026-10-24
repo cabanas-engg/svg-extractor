@@ -57,11 +57,14 @@ export function saveSession(file, session) {
 const area = (b) => Math.max(b[2] - b[0], 0.01) * Math.max(b[3] - b[1], 0.01);
 const inter = (a, b) => [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.min(a[2], b[2]), Math.min(a[3], b[3])];
 
-/** Elements of a page that mostly (≥ minOverlap of their area) fall inside box. */
-export function selectInBox(page, box, { minOverlap = 0.5, roles } = {}) {
+/**
+ * Elements of a page that mostly (≥ minOverlap of their area) fall inside box.
+ * Role doesn't matter here: a hand-drawn box around a card should get the
+ * card's backing shape even if detection classed it as background, and a
+ * page-sized background never falls mostly inside a smaller box anyway.
+ */
+export function selectInBox(page, box, { minOverlap = 0.5 } = {}) {
   return page.elements.filter((e) => {
-    const r = roles?.get(e.id);
-    if (r === 'background' || r === 'speck') return false;
     const i = inter(e.bbox, box);
     if (i[2] < i[0] || i[3] < i[1]) return false;
     // pad zero-width/height boxes (straight lines) so they can still qualify
@@ -70,8 +73,8 @@ export function selectInBox(page, box, { minOverlap = 0.5, roles } = {}) {
 }
 
 /** The elements an asset exports. Manual boxes are resolved spatially. */
-export function assetElements(page, asset, roles) {
-  if (asset.kind === 'manual' || !asset.elementIds) return selectInBox(page, asset.bbox, { roles });
+export function assetElements(page, asset) {
+  if (asset.kind === 'manual' || !asset.elementIds) return selectInBox(page, asset.bbox);
   const ids = new Set(asset.elementIds);
   return page.elements.filter((e) => ids.has(e.id));
 }

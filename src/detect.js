@@ -85,16 +85,35 @@ function linkBoxes(boxes, reach, linked) {
 // ---------------------------------------------------------------------------
 // outlined text
 
+const iou = (a, b) => {
+  const iw = Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
+  const ih = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
+  if (iw <= 0 || ih <= 0) return 0;
+  const i = iw * ih;
+  return i / (W(a) * H(a) + W(b) * H(b) - i);
+};
+
 /**
  * Given glyph-candidate boxes, return groups (index arrays) that look like
- * lines of text.
+ * lines of text. `colors` (optional, parallel to boxes) enables the
+ * single-colour check.
  */
-export function findTextRows(boxes, o) {
+export function findTextRows(boxes, o, colors) {
   const cand = boxes.map((b, i) => i).filter((i) => {
     const h = H(boxes[i]);
     return h > 0 && h <= o.maxGlyphHeight && W(boxes[i]) <= 2.5 * h + 2;
   });
-  const cb = cand.map((i) => boxes[i]);
+
+  // Fold near-duplicates into one unit. Outlined Illustrator art often paints
+  // each shape twice — the shape plus a slightly larger white knockout
+  // ("halo") behind it — which would otherwise double the glyph count.
+  const dup = linkBoxes(cand.map((i) => boxes[i]), () => 0, (i, j) => iou(boxes[cand[i]], boxes[cand[j]]) >= 0.6);
+  const units = dup.map((g) => {
+    const members = g.map((k) => cand[k]);
+    return { members, box: unionAll(members.map((i) => boxes[i])), colors: new Set(colors ? members.map((i) => colors[i]) : []) };
+  });
+
+  const cb = units.map((u) => u.box);
   const groups = linkBoxes(
     cb,
     (i) => o.glyphGap * H(cb[i]),
@@ -105,13 +124,20 @@ export function findTextRows(boxes, o) {
       const vOverlap = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
       if (vOverlap < 0.5 * Math.min(ha, hb)) return false;
       const hGap = Math.max(a[0], b[0]) - Math.min(a[2], b[2]);
-      return hGap <= o.glyphGap * Math.max(ha, hb) && hGap > -0.5 * Math.min(W(a), W(b));
+      // glyph boxes may touch or kern slightly, but don't overlap much
+      return hGap <= o.glyphGap * Math.max(ha, hb) && hGap >= -0.2 * Math.min(W(a), W(b));
     },
   );
   const rows = [];
   for (const g of groups) {
     if (g.length < o.minGlyphs) continue;
     const gb = g.map((i) => cb[i]);
+    // A word is one colour (white knockouts aside); icons usually mix colours.
+    if (colors) {
+      const counts = new Map();
+      for (const i of g) for (const c of units[i].colors) if (c !== '#ffffff') counts.set(c, (counts.get(c) || 0) + 1);
+      if (!counts.size || Math.max(...counts.values()) < 0.8 * g.length) continue;
+    }
     const mh = median(gb.map(H));
     const mb = median(gb.map((b) => b[3]));
     const onBaseline = gb.filter((b) => Math.abs(b[3] - mb) <= o.baselineTolerance * mh).length;
@@ -122,7 +148,7 @@ export function findTextRows(boxes, o) {
     // pattern, not a word.
     const same = gb.filter((b) => Math.abs(W(b) - W(gb[0])) < 0.03 * mh && Math.abs(H(b) - H(gb[0])) < 0.03 * mh).length;
     if (same / gb.length >= 0.8 && gb.length >= 3) continue;
-    rows.push(g.map((i) => cand[i]));
+    rows.push(g.flatMap((i) => units[i].members));
   }
   return rows;
 }
@@ -148,7 +174,7 @@ export function classify(page, opts = {}) {
 
   // Outlined text, case 1: one path per glyph.
   const geo = page.elements.filter((e) => role.get(e.id) === 'geometry' && e.type === 'path');
-  const rows = findTextRows(geo.map((e) => e.bbox), o).map((r) => r.map((i) => geo[i]));
+  const rows = findTextRows(geo.map((e) => e.bbox), o, geo.map((e) => (e.fill !== 'none' ? e.fill : e.stroke))).map((r) => r.map((i) => geo[i]));
   for (const row of rows) for (const e of row) role.set(e.id, 'text');
 
   // Outlined text, case 2: a whole word/line as one compound path.
@@ -272,17 +298,28 @@ export function detectPage(page, opts = {}) {
   const textEls = page.elements.filter((e) => roles.get(e.id) === 'text');
   const labels = groupLabelBlocks(groupTextLines(textEls, o), o);
 
-  // Text that sits entirely inside an asset (lettering on an icon) belongs to it.
+  // Text, specks and rules that sit entirely inside an asset (lettering on an
+  // icon, a tiny detail, a divider within a card) belong to it.
+  const hostBoxes = clusters.map((c) => unionAll(c.map((e) => e.bbox)));
+  const hostOf = (b) => hostBoxes.findIndex((hb) => contains(hb, b, 0));
+  const extra = new Map();
+  const adopt = (host, els) => {
+    if (!extra.has(host)) extra.set(host, []);
+    extra.get(host).push(...els);
+  };
   const freeLabels = [];
-  const extraText = new Map();
   for (const lb of labels) {
-    const host = clusters.findIndex((c) => contains(unionAll(c.map((e) => e.bbox)), lb.bbox, 0));
-    if (host >= 0) {
-      if (!extraText.has(host)) extraText.set(host, []);
-      extraText.get(host).push(...lb.elementIds.map((id) => byId.get(id)));
-    } else freeLabels.push(lb);
+    const host = hostOf(lb.bbox);
+    if (host >= 0) adopt(host, lb.elementIds.map((id) => byId.get(id)));
+    else freeLabels.push(lb);
   }
-  clusters = clusters.map((c, i) => (extraText.has(i) ? [...c, ...extraText.get(i)] : c));
+  for (const e of page.elements) {
+    const r = roles.get(e.id);
+    if (r !== 'speck' && r !== 'rule') continue;
+    const host = hostOf(e.bbox);
+    if (host >= 0) adopt(host, [e]);
+  }
+  clusters = clusters.map((c, i) => (extra.has(i) ? [...c, ...extra.get(i)] : c));
 
   let assets = clusters.map((c, i) => makeAsset(page, c, { id: `p${page.page}a${i}` }));
   assets = gridOrder(assets);

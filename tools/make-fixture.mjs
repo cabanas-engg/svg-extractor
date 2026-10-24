@@ -9,26 +9,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import PDFDocument from 'pdfkit';
-import opentype from 'opentype.js';
+import { loadFont, outlinedText as drawOutlined } from './outline.mjs';
 
 const outDir = process.argv[2] || 'test/fixtures';
 fs.mkdirSync(outDir, { recursive: true });
 
-const FONT = '/usr/share/fonts/truetype/dejavu/../freefont/FreeSansBold.ttf';
-const font = opentype.parse(fs.readFileSync(FONT).buffer);
+const font = loadFont();
 
 const ORANGE = '#f26b21';
 const GRAY = '#6d6e71';
 
-// Draw text as one path per glyph, centered on cx.
-function outlinedText(doc, text, cx, baseline, size, color = GRAY) {
-  const width = font.getAdvanceWidth(text, size);
-  const paths = font.getPaths(text, cx - width / 2, baseline, size);
-  for (const p of paths) {
-    const d = p.toPathData(3);
-    if (d) doc.path(d).fill(color);
-  }
-}
+const outlinedText = (doc, text, cx, baseline, size, color = GRAY) => drawOutlined(doc, font, text, cx, baseline, size, color);
 
 function ringIcon(doc, cx, cy, glyph) {
   doc.save();

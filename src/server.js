@@ -5,7 +5,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { classify } from './detect.js';
 import { renderAssetSVG, exportSession } from './export.js';
 import { svgToPNG } from './svg.js';
 import {
@@ -20,11 +19,6 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
 
 export function createApp({ file, parsed, session, sessionPath, exportDir }) {
   const pages = new Map(parsed.pages.map((p) => [p.page, p]));
-  const rolesCache = new Map();
-  const roles = (n) => {
-    if (!rolesCache.has(n)) rolesCache.set(n, classify(pages.get(n), session.options));
-    return rolesCache.get(n);
-  };
   const save = () => saveSession(sessionPath, session);
   const findAsset = (id) => {
     const a = session.assets.find((x) => x.id === id);
@@ -81,7 +75,7 @@ export function createApp({ file, parsed, session, sessionPath, exportDir }) {
       if (m === 'GET' && (r = p.match(/^\/api\/assets\/([^/]+)\.(svg|png)$/))) {
         const a = findAsset(decodeURIComponent(r[1]));
         const page = pageOf(a.page);
-        const svg = renderAssetSVG(page, a, { pad: session.options.pad, roles: roles(a.page) });
+        const svg = renderAssetSVG(page, a, { pad: session.options.pad });
         const dl = url.searchParams.has('download');
         const headers = dl ? { 'content-disposition': `attachment; filename="${a.name}.${r[2]}"` } : {};
         if (r[2] === 'svg') {
@@ -96,7 +90,7 @@ export function createApp({ file, parsed, session, sessionPath, exportDir }) {
       if (m === 'POST' && p === '/api/preview-box') {
         // How many elements a hand-drawn box would pick up, before committing it.
         const { page, bbox } = await body(req);
-        return send(res, 200, { count: selectInBox(pageOf(page), bbox, { roles: roles(page) }).length });
+        return send(res, 200, { count: selectInBox(pageOf(page), bbox).length });
       }
       if (m === 'POST' && p === '/api/assets') {
         const { page, bbox, name } = await body(req);
@@ -132,7 +126,6 @@ export function createApp({ file, parsed, session, sessionPath, exportDir }) {
       }
       if (m === 'POST' && p === '/api/redetect') {
         const { page, options } = await body(req);
-        rolesCache.clear();
         redetectPage(session, pageOf(page), options || {});
         save();
         return send(res, 200, state());

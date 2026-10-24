@@ -44,7 +44,9 @@ src/png.js             tiny PNG encoder for embedded raster images
 src/server.js          local review UI server (node:http, no framework)
 ui/                    review UI (vanilla JS, PDF.js page render + SVG overlay); tokens.css holds all design tokens
 tools/make-fixture.mjs generates test/fixtures/mockup.{pdf,ai}
-test/                  node:test regression tests against the fixture
+tools/eval-reference.mjs scores detection against hand-made reference crops
+tools/outline.mjs      outlined-text helper for test sheets (don't use pdfkit's doc.path(svg) — it truncates glyphs)
+test/                  node:test regression tests (synthetic fixture + real references when present)
 ```
 
 Commands: `npm test`, `npm run fixture`, `node bin/svg-extractor.js --help`.
@@ -65,12 +67,17 @@ Commands: `npm test`, `npm run fixture`, `node bin/svg-extractor.js --help`.
    Only geometry clusters into assets.
 4. **Filter out label text** — outlined glyphs are ordinary paths, so text is
    inferred: runs of ≥ 3 small, similarly sized shapes, horizontally close
-   (gap ≤ 0.7 × height), mostly on a shared baseline, wider than tall overall,
-   and not all identical (identical = a dash/dot pattern). A second pass catches
+   (gap ≤ 0.7 × height) but barely overlapping, mostly on a shared baseline,
+   wider than tall overall, one colour, and not all identical (identical = a
+   dash/dot pattern). Near-duplicate shapes are folded into one glyph first:
+   outlined Illustrator art paints many shapes twice (the shape + a slightly
+   larger white knockout "halo" behind it), which otherwise doubles the glyph
+   count and turns a pair of arrows into a "word". A second pass catches
    words outlined as one compound path by running the same test on its outer
    subpaths. Small marks inside a text row's band (punctuation) join the row.
-   Lines stack into label blocks. Text fully inside an asset (lettering on an
-   icon) is kept with that asset.
+   Lines stack into label blocks. Text, specks and rules fully inside an asset
+   (lettering on an icon, a tiny detail, a divider inside a card) are kept with
+   that asset; only free-standing ones are dropped.
 5. **Cluster** — union geometry whose bboxes are within `gap` (default 10pt).
    Assets get reading-order row/col, the nearest label below (preferred) or
    above, and a suggested name: the label's text if it's live text, else
@@ -96,8 +103,9 @@ All thresholds are in `DEFAULTS` in `src/detect.js` and settable via CLI
 
 ## Known hard parts (don't pretend these are solved)
 
-- **Text vs. icon separation is a heuristic.** It's only been validated on the
-  synthetic fixture. Expect to tune against real mockups. Known failure modes:
+- **Text vs. icon separation is a heuristic.** Validated on the synthetic
+  fixture and on the 18 hand-made LiftCom crops (see below), but not yet on a
+  real, busy mockup page with its real spacing. Known failure modes:
   a tight row of 3+ small, varied shapes reads as text; very large display type
   (> `maxGlyphHeight`) reads as geometry; script/connected lettering may not.
 - **Outlined labels can't name assets.** Outlined text has no string, so names
@@ -116,13 +124,33 @@ All thresholds are in `DEFAULTS` in `src/detect.js` and settable via CLI
   some blend modes) won't round-trip. Fine for outlined/flattened artwork
   (files so far are literally named "...Outlined...").
 
+## Reference set: LiftCom icons
+
+`liftcom_icons_svg.zip` holds the 18 crops made by hand in chat (pdftocairo
+output; viewBoxes are in the original page's coordinates, ~1pt margin). It's
+client artwork, so it lives in `test/fixtures/real/liftcom_icons_svg/`
+(gitignored). `node tools/eval-reference.mjs test/fixtures/real/liftcom_icons_svg`
+lays them out on a sheet with outlined labels underneath, runs detection and
+checks each comes back as exactly one asset with exactly its paths;
+`test/reference.test.js` runs the same check when the folder exists.
+
+Current result: 18/18 intact and labelled, crop sizes matching the hand-made
+ones to 0.01pt. Getting there needed the halo folding, single-colour and
+overlap rules above, and adopting contained specks. The two large panels
+(pricing panel, core card) only survive the background rule because the test
+page is as big as the real one (≥ 1219×2283pt, from the crops' coordinates) —
+on a smaller page they'd be classed as background (`backgroundArea`, 20% of
+the page). A hand-drawn box always recovers them.
+
 ## UI direction: schemabuddy.dev
 
 Nano wants the UI to follow the visual language of schemabuddy.dev (Nano's own
 visual SQL schema explorer — "free, open-source, no backend, no sign-up").
 
 **TODO — still not filled in.** schemabuddy.dev isn't reachable from the
-sandboxes this has been built in. The UI currently uses neutral placeholder
+sandboxes this has been built in (Oct 2026: DNS doesn't resolve via the web
+fetcher, the sandbox proxy blocks it, web search has no trace of it, and
+GitHub search is out of scope for the session). The UI currently uses neutral placeholder
 tokens, all in `ui/tokens.css` (nothing in `app.css` hard-codes a colour), so
 restyling is a token swap. Needed:
 
@@ -148,6 +176,7 @@ here.
 - Built: parser, classifier/text heuristic, clustering, label pairing, session
   model with merge/split/manual/resize/rename/exclude, SVG+PNG export,
   manifest, contact sheet, review UI, CLI, regression tests (fixture only).
-- Next: run against real AES mockups (put them in `test/fixtures/real/`,
-  gitignored) and tune `DEFAULTS`; schemabuddy styling; OCR naming for outlined
-  labels.
+- Validated against the 18 LiftCom reference crops (18/18).
+- Next: run against a real AES mockup source file (`.ai`/PDF, into
+  `test/fixtures/real/`) to check real spacing and labels; schemabuddy styling;
+  OCR naming for outlined labels.
