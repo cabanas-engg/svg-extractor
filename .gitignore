@@ -1,0 +1,5 @@
+node_modules/
+*.extract.json
+*-assets/
+test/fixtures/real/
+.DS_Store

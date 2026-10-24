@@ -1,0 +1,26 @@
+{
+  "name": "svg-extractor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Extract individual icons/diagrams from Illustrator (.ai) or PDF mockup sheets as clean SVG/PNG",
+  "type": "module",
+  "bin": {
+    "svg-extractor": "bin/svg-extractor.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "fixture": "node tools/make-fixture.mjs",
+    "start": "node bin/svg-extractor.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "pdfjs-dist": "^4.10.38"
+  },
+  "devDependencies": {
+    "opentype.js": "^2.0.0",
+    "pdfkit": "^0.20.2"
+  }
+}

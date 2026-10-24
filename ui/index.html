@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SVG Extractor</title>
+  <link rel="stylesheet" href="/ui/tokens.css">
+  <link rel="stylesheet" href="/ui/app.css">
+</head>
+<body>
+  <header class="bar">
+    <strong class="brand">SVG Extractor</strong>
+    <span class="file" id="file"></span>
+    <div class="group">
+      <button id="prev" title="Previous page">‹</button>
+      <span id="pageLabel">–</span>
+      <button id="next" title="Next page">›</button>
+    </div>
+    <div class="group">
+      <button id="zoomOut" title="Zoom out">−</button>
+      <span id="zoomLabel">100%</span>
+      <button id="zoomIn" title="Zoom in">+</button>
+      <button id="zoomFit" title="Fit width">Fit</button>
+    </div>
+    <details class="group popover" id="tuning">
+      <summary>Tuning</summary>
+      <form id="tuneForm">
+        <label>Gap (pt) <input name="gap" type="number" step="0.5" min="0"></label>
+        <label>Padding (pt) <input name="pad" type="number" step="0.5" min="0"></label>
+        <label>Max glyph height (pt) <input name="maxGlyphHeight" type="number" step="1" min="1"></label>
+        <label>Glyph gap (× height) <input name="glyphGap" type="number" step="0.05" min="0"></label>
+        <label>Min glyphs per word <input name="minGlyphs" type="number" step="1" min="1"></label>
+        <label>Background area (× page) <input name="backgroundArea" type="number" step="0.05" min="0" max="1"></label>
+        <label>Min asset size (pt) <input name="minAssetSize" type="number" step="0.5" min="0"></label>
+        <p class="hint">Re-detecting replaces this page's auto boxes. Hand-drawn boxes are kept.</p>
+        <button type="submit" class="primary">Re-detect page</button>
+      </form>
+    </details>
+    <span class="spacer"></span>
+    <details class="group popover right" id="exportBox">
+      <summary class="primary">Export…</summary>
+      <form id="exportForm">
+        <fieldset>
+          <legend>Format</legend>
+          <label><input type="checkbox" name="svg" checked> SVG</label>
+          <label><input type="checkbox" name="png"> PNG</label>
+        </fieldset>
+        <label>PNG scale <input name="scale" type="number" value="3" min="0.5" step="0.5"></label>
+        <label>Output folder <input name="out" type="text" id="outDir"></label>
+        <button type="submit" class="primary">Export all included</button>
+        <p class="hint" id="exportResult"></p>
+      </form>
+    </details>
+  </header>
+
+  <main class="layout">
+    <section class="stage" id="stage">
+      <div class="page" id="page">
+        <canvas id="canvas"></canvas>
+        <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="side-head">
+        <h2>Assets <span id="count" class="muted"></span></h2>
+        <div class="actions">
+          <button id="mergeBtn" title="Merge selected (M)" disabled>Merge</button>
+          <button id="splitBtn" title="Split selected (S)" disabled>Split</button>
+          <button id="excludeBtn" title="Toggle exclude (X)" disabled>Exclude</button>
+          <button id="deleteBtn" class="danger" title="Delete (Del)" disabled>Delete</button>
+        </div>
+        <p class="hint">Click a box to select (Shift for several) · drag on empty page to draw a box · drag a selected box's corner to resize</p>
+      </div>
+      <ul id="list" class="list"></ul>
+      <div id="warnings" class="warnings"></div>
+    </aside>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="/ui/app.js"></script>
+</body>
+</html>
