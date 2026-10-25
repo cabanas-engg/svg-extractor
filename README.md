@@ -18,6 +18,20 @@ Node 20+. No native dependencies beyond the prebuilt `@resvg/resvg-js` binary.
 
 ## Use
 
+The easiest way is the browser UI. Start it without a file and upload one:
+
+```sh
+node bin/svg-extractor.js serve                 # then open http://127.0.0.1:5178
+```
+
+Drag an `.ai` or PDF onto the page, or click **Choose file**. Uploads are saved
+in `./workspace/` (change with `--workspace <dir>`), each with its own session,
+so you can reopen them later from **Open file → Recent**. When you're done,
+**Export → Download .zip** gives you every SVG/PNG plus the manifest and
+contact sheet.
+
+From the command line:
+
 ```sh
 # one shot: detect + export SVGs (+ manifest.json, _contact-sheet.png)
 node bin/svg-extractor.js export sheet.ai -o icons/
@@ -25,7 +39,7 @@ node bin/svg-extractor.js export sheet.ai -o icons/
 # SVG and PNG at 4x
 node bin/svg-extractor.js export sheet.ai -o icons/ --format svg,png --scale 4
 
-# review and correct in the browser, then export from there or the CLI
+# review a file on disk in the browser (no upload needed)
 node bin/svg-extractor.js serve sheet.ai        # http://127.0.0.1:5178
 
 # just detect (writes sheet.ai.extract.json) / see what the parser found
@@ -53,12 +67,12 @@ The same knobs are under **Tuning** in the UI, with per-page re-detect.
 
 Styled after [schemabuddy.dev](https://www.schemabuddy.dev/): dark by default, with a light/dark toggle in the top-right corner.
 
-
 - Click a box to select it (Shift-click for several).
 - **M** merges, **S** splits (re-clusters at half the gap), **X** excludes, **Del** deletes.
 - Drag on an empty part of the page to draw a box by hand, or drag a selected box's corners to resize it.
 - Rename an asset in the sidebar. The thumbnails are the actual exported SVGs.
-- **E** opens the export dialog. The sidebar's *All pages* tab lists every page's assets.
+- **E** opens the export dialog (download a .zip, or save to a folder). **O** opens a file.
+- The sidebar's *All pages* tab lists every page's assets.
 
 ## Develop
 

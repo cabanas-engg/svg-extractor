@@ -13,13 +13,18 @@ const HELP = `svg-extractor — extract icons from Illustrator (.ai) / PDF mocku
 Usage:
   svg-extractor detect  <file> [-o session.json] [tuning]   detect assets, write a session
   svg-extractor export  <file> [-o dir] [--format svg,png]  export assets (uses the session if present)
-  svg-extractor serve   <file> [--port 5178]                open the review/correct UI
+  svg-extractor serve   [file] [--port 5178]                open the review/correct UI
+                                                            (no file: upload one from the browser)
   svg-extractor inspect <file>                              element/role counts and warnings
 
 Common options:
   --session <path>   session file (default: <file>.extract.json)
   --pages <list>     e.g. 1,3-5 (default: all)
   --redetect         ignore an existing session and detect from scratch
+
+Serve options:
+  --port <n>         port for the UI (default: 5178)
+  --workspace <dir>  where browser uploads are stored (default: ./workspace)
 
 Export options:
   -o, --out <dir>    output directory (default: ./<file-name>-assets)
@@ -69,6 +74,7 @@ async function main() {
       'no-contact-sheet': { type: 'boolean' },
       redetect: { type: 'boolean' },
       port: { type: 'string', default: '5178' },
+      workspace: { type: 'string', default: 'workspace' },
       gap: { type: 'string' },
       pad: { type: 'string' },
       'max-glyph-height': { type: 'string' },
@@ -77,9 +83,15 @@ async function main() {
     },
   });
   const [cmd, file] = positionals;
-  if (v.help || !cmd || !file) {
+  if (v.help || !cmd || (!file && cmd !== 'serve')) {
     process.stdout.write(HELP);
     process.exit(cmd ? 0 : 1);
+  }
+  const workspace = path.resolve(v.workspace);
+  if (cmd === 'serve' && !file) {
+    const { startServer } = await import('../src/server.js');
+    await startServer({ workspace, port: Number(v.port) });
+    return;
   }
   if (!fs.existsSync(file)) throw new Error(`no such file: ${file}`);
 
@@ -140,8 +152,10 @@ async function main() {
     case 'serve': {
       const { session, fromDisk } = getSession();
       if (!fromDisk) saveSession(sessionPath, session);
-      const { startServer } = await import('../src/server.js');
-      await startServer({ file, parsed, session, sessionPath, port: Number(v.port) });
+      const { startServer, exportDirFor } = await import('../src/server.js');
+      const pagesMap = new Map(parsed.pages.map((p) => [p.page, p]));
+      const doc = { file, parsed, session, sessionPath, exportDir: exportDirFor(file), pages: pagesMap };
+      await startServer({ doc, workspace, port: Number(v.port) });
       break;
     }
     default:

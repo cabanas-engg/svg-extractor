@@ -19,15 +19,17 @@ export function renderAssetSVG(page, asset, { pad = 1, idPrefix = '' } = {}) {
 }
 
 /**
+ * Build every export file in memory.
  * @param parsed   result of parseFile
  * @param session  session (see session.js)
- * @param opts     { out, formats: ['svg'|'png'], scale, contactSheet }
+ * @param opts     { formats: ['svg'|'png'], scale, contactSheet, pad }
+ * @returns {{ files: { name: string, data: string|Buffer }[], manifest }}
  */
-export function exportSession(parsed, session, opts) {
-  const { out, formats = ['svg'], scale = 3, contactSheet = true } = opts;
+export function buildExport(parsed, session, opts = {}) {
+  const { formats = ['svg'], scale = 3, contactSheet = true } = opts;
   const pad = opts.pad ?? session.options.pad;
-  fs.mkdirSync(out, { recursive: true });
   const pages = new Map(parsed.pages.map((p) => [p.page, p]));
+  const files = [];
   const written = [];
   const used = new Set();
 
@@ -46,14 +48,14 @@ export function exportSession(parsed, session, opts) {
 
     const box = cropBox(asset, pad);
     const svg = buildSVG(page, els, box, { idPrefix: `${name}-` });
-    const files = {};
+    const out = {};
     if (formats.includes('svg')) {
-      files.svg = `${name}.svg`;
-      fs.writeFileSync(path.join(out, files.svg), svg);
+      out.svg = `${name}.svg`;
+      files.push({ name: out.svg, data: svg });
     }
     if (formats.includes('png')) {
-      files.png = `${name}.png`;
-      fs.writeFileSync(path.join(out, files.png), svgToPNG(svg, { scale }));
+      out.png = `${name}.png`;
+      files.push({ name: out.png, data: svgToPNG(svg, { scale }) });
     }
     written.push({
       id: asset.id,
@@ -65,7 +67,7 @@ export function exportSession(parsed, session, opts) {
       elements: els.length,
       styles: asset.styles,
       label: asset.labelText || null,
-      files,
+      files: out,
       svg, // stripped before writing the manifest
     });
   }
@@ -78,12 +80,20 @@ export function exportSession(parsed, session, opts) {
     assets: written.map(({ svg, ...rest }) => rest),
     warnings: parsed.warnings,
   };
-  fs.writeFileSync(path.join(out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+  files.push({ name: 'manifest.json', data: JSON.stringify(manifest, null, 2) + '\n' });
 
   if (contactSheet) {
     const sheet = buildContactSheet(written.filter((w) => w.svg));
-    fs.writeFileSync(path.join(out, '_contact-sheet.png'), svgToPNG(sheet, { scale: 1.5, background: '#ffffff' }));
+    files.push({ name: '_contact-sheet.png', data: svgToPNG(sheet, { scale: 1.5, background: '#ffffff' }) });
   }
+  return { files, manifest };
+}
+
+/** Build the export and write it to a folder. Returns the manifest. */
+export function exportSession(parsed, session, opts) {
+  const { files, manifest } = buildExport(parsed, session, opts);
+  fs.mkdirSync(opts.out, { recursive: true });
+  for (const f of files) fs.writeFileSync(path.join(opts.out, f.name), f.data);
   return manifest;
 }
 

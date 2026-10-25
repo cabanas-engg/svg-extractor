@@ -3,3 +3,4 @@ node_modules/
 *-assets/
 test/fixtures/real/
 .DS_Store
+workspace/

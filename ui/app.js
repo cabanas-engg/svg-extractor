@@ -433,10 +433,12 @@ document.addEventListener('pointerdown', (e) => {
     tune.hidden = true;
     $('#tuneBtn').classList.remove('open');
   }
+  if (!$('#openMenu').hidden && !e.target.closest('.popover-wrap')) $('#openMenu').hidden = true;
 });
 
 const exportDialog = $('#exportDialog');
 function openExport() {
+  if (ui.data.empty) return;
   const included = ui.data.assets.filter((a) => !a.exclude).length;
   $('#exportSummary').textContent = `${included} of ${ui.data.assets.length} assets will be exported, plus manifest.json and a contact sheet.`;
   $('#exportResult').textContent = '';
@@ -449,6 +451,8 @@ $('#exportCancel').onclick = () => exportDialog.close();
 document.addEventListener('keydown', (e) => {
   if (e.target.closest('input, textarea') || exportDialog.open) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'o' || e.key === 'O') return $('#fileInput').click();
+  if (ui.data?.empty !== false) return;
   if (e.key === 'e' || e.key === 'E') openExport();
   else if (e.key === 'm' || e.key === 'M') mergeSelected();
   else if (e.key === 's' || e.key === 'S') splitSelected();
@@ -477,44 +481,225 @@ $('#tuneForm').addEventListener('submit', async (e) => {
   }
 });
 
-$('#exportForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const f = e.target;
+function exportOptions() {
+  const f = $('#exportForm');
   const formats = ['svg', 'png'].filter((k) => f.elements[k].checked);
-  if (!formats.length) return toast('Pick at least one format');
+  if (!formats.length) {
+    $('#exportResult').textContent = 'Pick at least one format.';
+    return null;
+  }
+  return { formats, scale: Number(f.elements.scale.value) || 3, out: f.elements.out.value };
+}
+
+// Download: a plain GET so the browser streams it like any other download.
+$('#exportForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const o = exportOptions();
+  if (!o) return;
+  const a = document.createElement('a');
+  a.href = `/api/export.zip?formats=${o.formats.join(',')}&scale=${o.scale}`;
+  a.download = '';
+  document.body.append(a);
+  a.click();
+  a.remove();
+  $('#exportResult').textContent = 'Preparing the .zip; your browser will download it in a moment.';
+});
+
+$('#exportFolder').onclick = async () => {
+  const o = exportOptions();
+  if (!o) return;
   $('#exportResult').textContent = 'Exporting…';
   try {
-    const r = await api('POST', '/api/export', { formats, scale: Number(f.elements.scale.value), out: f.elements.out.value });
+    const r = await api('POST', '/api/export', o);
     $('#exportResult').textContent = `${r.count} assets → ${r.out} (contact sheet: _contact-sheet.png)`;
   } catch (err) {
     $('#exportResult').textContent = err.message;
   }
-});
+};
 
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(async () => {
-    if (!ui.zoom) {
+    if (!ui.zoom && ui.data && !ui.data.empty) {
       await renderPage();
       drawOverlay();
     }
   }, 150);
 });
 
-// ---------------------------------------------------------------- boot
+// ---------------------------------------------------------------- opening files
 
-(async function boot() {
-  ui.data = await api('GET', '/api/state');
+const busy = (text) => {
+  $('#busy').hidden = !text;
+  if (text) $('#busyText').textContent = text;
+};
+const fmtSize = (b) => (b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+function fmtAgo(ms) {
+  const m = Math.round((Date.now() - ms) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  if (m < 60 * 24) return `${Math.round(m / 60)} h ago`;
+  return new Date(ms).toLocaleDateString();
+}
+
+function recentItems() {
+  return ui.data.recent.map((r) => {
+    const b = document.createElement('button');
+    b.className = `menu-item${r.name === ui.data.file ? ' current' : ''}`;
+    const name = document.createElement('span');
+    name.className = 'grow';
+    name.textContent = r.name;
+    const meta = document.createElement('span');
+    meta.className = 'meta-r';
+    meta.textContent = `${r.assets != null ? `${r.assets} assets · ` : ''}${fmtAgo(r.modified)}`;
+    b.title = `Open ${r.name} (${fmtSize(r.size)})`;
+    b.append(icon('file-image'), name, meta);
+    b.onclick = () => openRecent(r.name);
+    return b;
+  });
+}
+
+function renderRecent() {
+  const items = recentItems();
+  $('#recentBlock').hidden = !items.length;
+  $('#recentList').replaceChildren(...items);
+  const menu = recentItems();
+  if (!menu.length) {
+    const p = document.createElement('div');
+    p.className = 'menu-empty';
+    p.textContent = 'Nothing uploaded yet.';
+    menu.push(p);
+  }
+  $('#recentMenu').replaceChildren(...menu);
+  $('#uploadNote').textContent = `Up to ${Math.round(ui.data.maxUpload / 1024 / 1024)} MB. Files stay on this computer, in ${ui.data.workspace}`;
+}
+
+function showError(msg) {
+  const el = $('#dropError');
+  el.textContent = msg;
+  el.hidden = !msg;
+  if (msg) toast(msg);
+}
+
+async function uploadFile(file) {
+  if (!file) return;
+  $('#openMenu').hidden = true;
+  showError('');
+  if (!/\.(ai|pdf)$/i.test(file.name)) return showError(`${file.name}: choose an .ai or .pdf file.`);
+  if (file.size > ui.data.maxUpload) return showError(`${file.name} is ${fmtSize(file.size)}; the limit is ${fmtSize(ui.data.maxUpload)}.`);
+  busy(`Uploading and analysing ${file.name}…`);
+  try {
+    const res = await fetch(`/api/upload?name=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: file,
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || res.statusText);
+    ui.data = json;
+    await showDocument();
+    toast(`Opened ${ui.data.file}: ${ui.data.assets.length} assets found`);
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    busy(null);
+    $('#fileInput').value = '';
+  }
+}
+
+async function openRecent(name) {
+  $('#openMenu').hidden = true;
+  busy(`Opening ${name}…`);
+  try {
+    ui.data = await api('POST', '/api/open', { name });
+    await showDocument();
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    busy(null);
+  }
+}
+
+$('#openBtn').onclick = (e) => {
+  e.stopPropagation();
+  renderRecent();
+  $('#openMenu').hidden = !$('#openMenu').hidden;
+};
+$('#uploadItem').onclick = () => $('#fileInput').click();
+$('#chooseBtn').onclick = () => $('#fileInput').click();
+$('#fileInput').onchange = (e) => uploadFile(e.target.files[0]);
+
+// Drag a file anywhere onto the window.
+let dragDepth = 0;
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+window.addEventListener('dragenter', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  if (++dragDepth === 1) $('#dropOverlay').hidden = false;
+});
+window.addEventListener('dragover', (e) => {
+  if (hasFiles(e)) e.preventDefault();
+});
+window.addEventListener('dragleave', (e) => {
+  if (!hasFiles(e)) return;
+  if (--dragDepth <= 0) {
+    dragDepth = 0;
+    $('#dropOverlay').hidden = true;
+  }
+});
+window.addEventListener('drop', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  $('#dropOverlay').hidden = true;
+  const files = [...e.dataTransfer.files];
+  if (files.length > 1) toast('One file at a time; opening the first.');
+  uploadFile(files[0]);
+});
+
+function showStart() {
+  $('#app').classList.add('no-doc');
+  $('#start').hidden = false;
+  $('#fileChip').hidden = true;
+  $('#exportOpen').disabled = true;
+  $('#warnings').innerHTML = '';
+  $('#list').replaceChildren(Object.assign(document.createElement('li'), { className: 'empty', textContent: 'No file open yet. Upload an .ai or PDF to start.' }));
+  $('#count').textContent = '';
+  $('#stats').replaceChildren();
+  for (const id of ['#mergeBtn', '#splitBtn', '#excludeBtn', '#deleteBtn']) $(id).disabled = true;
+  renderRecent();
+}
+
+async function showDocument() {
+  if (ui.data.empty) return showStart();
+  $('#app').classList.remove('no-doc');
+  $('#start').hidden = true;
+  $('#fileChip').hidden = false;
+  $('#exportOpen').disabled = false;
   $('#file').textContent = ui.data.file;
   $('#outDir').value = ui.data.exportDir;
   $('#warnings').innerHTML = [
     ui.data.stale ? '<div>⚠ Source file changed since this session was saved; consider re-detecting.</div>' : '',
     ...ui.data.warnings.map((w) => `<div>⚠ ${escapeAttr(w)}</div>`),
   ].join('');
+  ui.selected.clear();
+  ui.version++;
+  ui.zoom = null;
   ui.pageNum = ui.data.pages[0].page;
-  ui.pdf = await pdfjs.getDocument({ url: '/api/source' }).promise;
+  ui.renderTask?.cancel();
+  await ui.pdf?.destroy();
+  // cache-buster: the URL is the same for every file
+  ui.pdf = await pdfjs.getDocument({ url: `/api/source?v=${Date.now()}` }).promise;
   await renderPage();
   renderAll();
   fillTuning();
+  renderRecent();
+}
+
+// ---------------------------------------------------------------- boot
+
+(async function boot() {
+  ui.data = await api('GET', '/api/state');
+  await showDocument();
 })().catch((e) => toast(`Failed to load: ${e.message}`));

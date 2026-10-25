@@ -275,7 +275,7 @@ input:focus { outline: none; border-color: hsl(var(--ring)); }
 .format b { display: block; font-size: 13px; }
 .format small { display: block; font-size: 10px; color: hsl(var(--muted-foreground)); }
 .field { display: grid; gap: 4px; font-size: 12px; color: hsl(var(--muted-foreground)); }
-.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 
 .toast {
   position: fixed; right: 16px; bottom: 16px; z-index: 50; max-width: 360px;
@@ -286,6 +286,63 @@ input:focus { outline: none; border-color: hsl(var(--ring)); }
   transition: opacity 0.2s, transform 0.2s; pointer-events: none;
 }
 .toast.show { opacity: 1; transform: translateY(0); }
+
+/* opening files */
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.menu { width: 380px; gap: 2px; padding: 4px; }
+.menu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px 10px; border-radius: calc(var(--radius) - 2px);
+  font-size: 13px; text-align: left; color: hsl(var(--foreground));
+}
+.menu-item:hover { background: hsl(var(--secondary)); }
+.menu-item .icon { color: hsl(var(--muted-foreground)); }
+.menu-item .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 12px; }
+.menu-item .meta-r { font: 10px var(--font-mono); color: hsl(var(--muted-foreground)); white-space: nowrap; }
+.menu-item.current .grow { color: hsl(var(--primary)); }
+.menu-sep { height: 1px; background: hsl(var(--border)); margin: 4px 0; }
+.menu-label { font: 600 9px var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: hsl(var(--muted-foreground)); padding: 6px 10px 4px; }
+.menu-empty { font-size: 12px; color: hsl(var(--muted-foreground)); padding: 4px 10px 8px; }
+
+.start { flex: 1; display: grid; align-content: center; justify-items: center; gap: 20px; padding: 24px 0; overflow: auto; }
+.dropzone {
+  width: min(560px, 100%); display: grid; justify-items: center; gap: 12px; text-align: center;
+  padding: 40px 32px; border: 1.5px dashed hsl(var(--border)); border-radius: calc(var(--radius) + 4px);
+  background: hsl(var(--card) / 0.6); transition: border-color 0.15s, background-color 0.15s;
+}
+.dropzone.over, .app.dragging .dropzone { border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.06); }
+.drop-mark {
+  width: 48px; height: 48px; border-radius: var(--radius); display: grid; place-items: center;
+  background: hsl(var(--primary) / 0.1); color: hsl(var(--primary));
+}
+.drop-mark .icon { width: 22px; height: 22px; }
+.dropzone h1 { font-size: 18px; font-weight: 600; margin: 4px 0 0; color: hsl(var(--foreground)); }
+.dropzone p { margin: 0; font-size: 13px; max-width: 420px; }
+.dropzone .btn-primary { margin-top: 6px; padding: 10px 18px; }
+.drop-error { color: hsl(var(--destructive)); font-size: 12px !important; }
+.recent { width: min(560px, 100%); }
+.recent-list { display: grid; gap: 2px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--card)); padding: 4px; }
+
+.drop-overlay {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+  background: hsl(var(--background) / 0.7); backdrop-filter: blur(2px); pointer-events: none;
+}
+.drop-overlay > div {
+  display: grid; justify-items: center; gap: 10px; padding: 40px 56px;
+  border: 2px dashed hsl(var(--primary)); border-radius: calc(var(--radius) + 4px);
+  background: hsl(var(--card)); color: hsl(var(--primary)); font-size: 16px; font-weight: 600;
+}
+.drop-overlay .icon { width: 28px; height: 28px; }
+.busy { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; background: hsl(var(--background) / 0.6); backdrop-filter: blur(2px); }
+.busy-card {
+  display: flex; align-items: center; gap: 12px; padding: 14px 20px;
+  background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.3); font-size: 13px;
+}
+.busy-card .icon { width: 18px; height: 18px; color: hsl(var(--primary)); }
+.spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.app.no-doc .toolbar, .app.no-doc .canvas, .app.no-doc .legend { display: none; }
 
 @media (max-width: 820px) {
   .app { flex-direction: column-reverse; height: auto; min-height: 100vh; overflow: visible; }

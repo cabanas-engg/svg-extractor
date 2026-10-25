@@ -51,13 +51,38 @@
       <header class="topbar">
         <button class="icon-btn" id="expandBtn" title="Show sidebar" hidden><i data-icon="panel-left-open"></i></button>
         <span class="topbar-brand" id="topbarBrand" hidden><i data-icon="scan-search"></i> SVG Extractor</span>
-        <span class="file-chip"><i data-icon="file-image"></i><span id="file"></span></span>
+        <span class="file-chip" id="fileChip" hidden><i data-icon="file-image"></i><span id="file"></span></span>
         <span class="spacer"></span>
+        <div class="popover-wrap">
+          <button class="btn btn-outline btn-sm" id="openBtn" title="Upload or reopen a file (O)"><i data-icon="folder-open"></i> Open file</button>
+          <div class="popover menu" id="openMenu" hidden>
+            <button class="menu-item" id="uploadItem"><i data-icon="upload"></i> Upload .ai or PDF…</button>
+            <div class="menu-sep"></div>
+            <div class="menu-label">Recent</div>
+            <div id="recentMenu"></div>
+          </div>
+        </div>
+        <input type="file" id="fileInput" accept=".ai,.pdf,application/pdf,application/illustrator" hidden>
         <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme"></button>
       </header>
 
       <main class="content">
-        <div class="toolbar">
+        <section class="start" id="start" hidden>
+          <div class="dropzone" id="dropzone">
+            <div class="drop-mark"><i data-icon="upload"></i></div>
+            <h1>Upload an Illustrator or PDF file</h1>
+            <p class="muted">Drop it here, or choose a file. <b>.ai</b> files must be saved with <em>Create PDF Compatible File</em> (Illustrator's default).</p>
+            <button class="btn btn-primary glow-primary" id="chooseBtn"><i data-icon="folder-open"></i> Choose file</button>
+            <p class="hint" id="uploadNote"></p>
+            <p class="drop-error" id="dropError" hidden></p>
+          </div>
+          <div class="recent" id="recentBlock" hidden>
+            <div class="menu-label">Recent files</div>
+            <div id="recentList" class="recent-list"></div>
+          </div>
+        </section>
+
+        <div class="toolbar" id="toolbar">
           <div class="toolbar-left">
             <div class="stats" id="stats"></div>
             <div class="group">
@@ -119,14 +144,22 @@
         <label class="format"><input type="checkbox" name="png"><i data-icon="file-image"></i><span><b>PNG</b><small>Rendered from the SVG</small></span></label>
       </fieldset>
       <label class="field">PNG scale<input name="scale" type="number" value="3" min="0.5" step="0.5"></label>
-      <label class="field">Output folder<input name="out" type="text" id="outDir" spellcheck="false"></label>
+      <label class="field">Folder for “Save to folder”<input name="out" type="text" id="outDir" spellcheck="false"></label>
       <p class="hint" id="exportResult"></p>
       <div class="dialog-actions">
         <button type="button" class="btn btn-outline" id="exportCancel">Close</button>
-        <button type="submit" class="btn btn-primary"><i data-icon="download"></i> Export</button>
+        <button type="button" class="btn btn-outline" id="exportFolder"><i data-icon="folder-down"></i> Save to folder</button>
+        <button type="submit" class="btn btn-primary"><i data-icon="file-archive"></i> Download .zip</button>
       </div>
     </form>
   </dialog>
+
+  <div class="drop-overlay" id="dropOverlay" hidden>
+    <div><i data-icon="upload"></i><span>Drop to open</span></div>
+  </div>
+  <div class="busy" id="busy" hidden>
+    <div class="busy-card"><i data-icon="loader-circle" class="spin"></i><span id="busyText">Working…</span></div>
+  </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script type="module" src="/ui/app.js"></script>

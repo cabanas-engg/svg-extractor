@@ -51,6 +51,17 @@ export function saveSession(file, session) {
   fs.writeFileSync(file, JSON.stringify(rest, null, 1) + '\n');
 }
 
+/**
+ * The session for a parsed file: the saved one if present (flagged `stale` if
+ * the source changed since), otherwise a fresh detection, saved straight away.
+ */
+export function openSession(parsed, { sessionPath = defaultSessionPath(parsed.file), redetect = false, opts = {} } = {}) {
+  if (!redetect && fs.existsSync(sessionPath)) return { session: loadSession(sessionPath, parsed.file), fromDisk: true, sessionPath };
+  const session = createSession(parsed, opts);
+  saveSession(sessionPath, session);
+  return { session, fromDisk: false, sessionPath };
+}
+
 // ---------------------------------------------------------------------------
 // element resolution
 

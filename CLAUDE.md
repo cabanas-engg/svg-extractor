@@ -34,14 +34,15 @@ upload.
 ## Layout
 
 ```
-bin/svg-extractor.js   CLI: detect | export | serve | inspect
+bin/svg-extractor.js   CLI: detect | export | serve [file] | inspect
 src/parse.js           PDF.js operator list → flat page elements (paths, images, live text)
 src/detect.js          classify roles, outlined-text heuristic, clustering, label pairing, naming
 src/session.js         editable session JSON (<file>.extract.json): merge/split/manual/rename/exclude
 src/svg.js             element subset → standalone SVG (tight viewBox); SVG → PNG via resvg
 src/export.js          batch export, manifest.json, _contact-sheet.png
 src/png.js             tiny PNG encoder for embedded raster images
-src/server.js          local review UI server (node:http, no framework)
+src/server.js          local review UI server (node:http, no framework): uploads, workspace, zip export
+src/zip.js             minimal zip writer for "Download .zip"
 ui/                    review UI (vanilla JS, PDF.js page render + SVG overlay); tokens.css = all design tokens (schemabuddy palette), icons.js = inlined Lucide icons
 tools/make-fixture.mjs generates test/fixtures/mockup.{pdf,ai}
 tools/eval-reference.mjs scores detection against hand-made reference crops
@@ -97,6 +98,17 @@ Commands: `npm test`, `npm run fixture`, `node bin/svg-extractor.js --help`.
    thumbnails are the real exported SVGs. Tuning popover re-detects the page with
    new thresholds (manual boxes survive). All edits save to the session file,
    which `export` then uses.
+8. **Opening files from the browser** — `serve` without a file starts on an
+   upload screen (drop anywhere, or a file picker; "O" key). Uploads stream to
+   `--workspace` (default `./workspace`, gitignored) under a sanitised name;
+   the first 1KB must contain `%PDF-` or the upload is rejected with the
+   "Create PDF Compatible File" message (415), and the open document is left
+   alone. Same name + same bytes reuses the file and its session; same name +
+   different bytes gets a `-2` suffix. Cap 300MB (`MAX_UPLOAD`). Every
+   workspace file appears under **Open file → Recent**. Export offers
+   **Download .zip** (`GET /api/export.zip`, built in memory by
+   `buildExport` + `zip.js`) besides saving to a folder. The server binds to
+   127.0.0.1 only — it's a local tool, not a hosted service.
 
 All thresholds are in `DEFAULTS` in `src/detect.js` and settable via CLI
 (`--gap`, `--pad`, `--max-glyph-height`, `--set key=value`) or the UI.
@@ -187,6 +199,7 @@ Nothing in `app.css` hard-codes a colour; everything goes through tokens.
   manifest, contact sheet, review UI, CLI, regression tests (fixture only).
 - Validated against the 18 LiftCom reference crops (18/18).
 - Review UI restyled to match schemabuddy.dev (dark default + light toggle).
+- Browser upload (drop/pick), workspace with recent files, .zip download.
 - Next: run against a real AES mockup source file (`.ai`/PDF, into
   `test/fixtures/real/`) to check real spacing and labels; OCR naming for
   outlined labels.
