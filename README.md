@@ -51,10 +51,14 @@ The same knobs are under **Tuning** in the UI, with per-page re-detect.
 
 ### Review UI
 
+Styled after [schemabuddy.dev](https://www.schemabuddy.dev/): dark by default, with a light/dark toggle in the top-right corner.
+
+
 - Click a box to select it (Shift-click for several).
 - **M** merges, **S** splits (re-clusters at half the gap), **X** excludes, **Del** deletes.
 - Drag on an empty part of the page to draw a box by hand, or drag a selected box's corners to resize it.
 - Rename an asset in the sidebar. The thumbnails are the actual exported SVGs.
+- **E** opens the export dialog. The sidebar's *All pages* tab lists every page's assets.
 
 ## Develop
 

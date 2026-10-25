@@ -1,83 +1,134 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SVG Extractor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/ui/tokens.css">
   <link rel="stylesheet" href="/ui/app.css">
+  <script>
+    // Apply the saved theme before first paint (dark by default, like schemabuddy.dev).
+    try { if (localStorage.getItem('svgx-theme') === 'light') document.documentElement.classList.remove('dark'); } catch {}
+  </script>
 </head>
 <body>
-  <header class="bar">
-    <strong class="brand">SVG Extractor</strong>
-    <span class="file" id="file"></span>
-    <div class="group">
-      <button id="prev" title="Previous page">‹</button>
-      <span id="pageLabel">–</span>
-      <button id="next" title="Next page">›</button>
-    </div>
-    <div class="group">
-      <button id="zoomOut" title="Zoom out">−</button>
-      <span id="zoomLabel">100%</span>
-      <button id="zoomIn" title="Zoom in">+</button>
-      <button id="zoomFit" title="Fit width">Fit</button>
-    </div>
-    <details class="group popover" id="tuning">
-      <summary>Tuning</summary>
-      <form id="tuneForm">
-        <label>Gap (pt) <input name="gap" type="number" step="0.5" min="0"></label>
-        <label>Padding (pt) <input name="pad" type="number" step="0.5" min="0"></label>
-        <label>Max glyph height (pt) <input name="maxGlyphHeight" type="number" step="1" min="1"></label>
-        <label>Glyph gap (× height) <input name="glyphGap" type="number" step="0.05" min="0"></label>
-        <label>Min glyphs per word <input name="minGlyphs" type="number" step="1" min="1"></label>
-        <label>Background area (× page) <input name="backgroundArea" type="number" step="0.05" min="0" max="1"></label>
-        <label>Min asset size (pt) <input name="minAssetSize" type="number" step="0.5" min="0"></label>
-        <p class="hint">Re-detecting replaces this page's auto boxes. Hand-drawn boxes are kept.</p>
-        <button type="submit" class="primary">Re-detect page</button>
-      </form>
-    </details>
-    <span class="spacer"></span>
-    <details class="group popover right" id="exportBox">
-      <summary class="primary">Export…</summary>
-      <form id="exportForm">
-        <fieldset>
-          <legend>Format</legend>
-          <label><input type="checkbox" name="svg" checked> SVG</label>
-          <label><input type="checkbox" name="png"> PNG</label>
-        </fieldset>
-        <label>PNG scale <input name="scale" type="number" value="3" min="0.5" step="0.5"></label>
-        <label>Output folder <input name="out" type="text" id="outDir"></label>
-        <button type="submit" class="primary">Export all included</button>
-        <p class="hint" id="exportResult"></p>
-      </form>
-    </details>
-  </header>
-
-  <main class="layout">
-    <section class="stage" id="stage">
-      <div class="page" id="page">
-        <canvas id="canvas"></canvas>
-        <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
-      </div>
-    </section>
-
-    <aside class="side">
-      <div class="side-head">
-        <h2>Assets <span id="count" class="muted"></span></h2>
-        <div class="actions">
-          <button id="mergeBtn" title="Merge selected (M)" disabled>Merge</button>
-          <button id="splitBtn" title="Split selected (S)" disabled>Split</button>
-          <button id="excludeBtn" title="Toggle exclude (X)" disabled>Exclude</button>
-          <button id="deleteBtn" class="danger" title="Delete (Del)" disabled>Delete</button>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><i data-icon="scan-search"></i></div>
+        <div class="brand-text">
+          <div class="brand-name">SVG Extractor</div>
+          <div class="brand-sub">Icon &amp; Diagram Extraction Tool</div>
         </div>
-        <p class="hint">Click a box to select (Shift for several) · drag on empty page to draw a box · drag a selected box's corner to resize</p>
+        <button class="icon-btn" id="collapseBtn" title="Hide sidebar"><i data-icon="panel-left-close"></i></button>
       </div>
-      <ul id="list" class="list"></ul>
-      <div id="warnings" class="warnings"></div>
-    </aside>
-  </main>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-scope="page" role="tab"><i data-icon="file"></i> This page</button>
+        <button class="tab" data-scope="all" role="tab"><i data-icon="layers"></i> All pages</button>
+        <span class="tab-count" id="count"></span>
+      </div>
+
+      <ul id="list" class="list"></ul>
+
+      <div class="sidebar-foot">
+        <div id="warnings" class="warnings"></div>
+        <button id="exportOpen" class="btn btn-primary glow-primary">
+          <i data-icon="download"></i> Export assets <kbd>E</kbd>
+        </button>
+        <div class="action-grid">
+          <button id="mergeBtn" class="btn btn-outline" title="Merge selected (M)" disabled><i data-icon="merge"></i> Merge</button>
+          <button id="splitBtn" class="btn btn-outline" title="Split selected (S)" disabled><i data-icon="split"></i> Split</button>
+          <button id="excludeBtn" class="btn btn-outline" title="Toggle exclude (X)" disabled><i data-icon="eye-off"></i> Exclude</button>
+          <button id="deleteBtn" class="btn btn-outline danger" title="Delete (Del)" disabled><i data-icon="trash-2"></i> Delete</button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="icon-btn" id="expandBtn" title="Show sidebar" hidden><i data-icon="panel-left-open"></i></button>
+        <span class="topbar-brand" id="topbarBrand" hidden><i data-icon="scan-search"></i> SVG Extractor</span>
+        <span class="file-chip"><i data-icon="file-image"></i><span id="file"></span></span>
+        <span class="spacer"></span>
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme"></button>
+      </header>
+
+      <main class="content">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <div class="stats" id="stats"></div>
+            <div class="group">
+              <button class="group-btn" id="prev" title="Previous page (←)"><i data-icon="chevron-left"></i></button>
+              <span class="group-label" id="pageLabel">–</span>
+              <button class="group-btn" id="next" title="Next page (→)"><i data-icon="chevron-right"></i></button>
+            </div>
+          </div>
+          <div class="group">
+            <button class="group-btn" id="zoomOut" title="Zoom out"><i data-icon="zoom-out"></i></button>
+            <button class="group-label group-btn" id="zoomLabel" title="Fit to width">100%</button>
+            <button class="group-btn" id="zoomIn" title="Zoom in"><i data-icon="zoom-in"></i></button>
+            <button class="group-btn" id="zoomFit" title="Fit to width"><i data-icon="maximize"></i></button>
+            <span class="group-sep"></span>
+            <div class="popover-wrap">
+              <button class="group-btn with-label" id="tuneBtn" title="Detection thresholds"><i data-icon="sliders-horizontal"></i><span>Tuning</span></button>
+              <form id="tuneForm" class="popover" hidden>
+                <div class="popover-title">Detection thresholds</div>
+                <label>Gap <span class="unit">pt</span><input name="gap" type="number" step="0.5" min="0"></label>
+                <label>Padding <span class="unit">pt</span><input name="pad" type="number" step="0.5" min="0"></label>
+                <label>Max glyph height <span class="unit">pt</span><input name="maxGlyphHeight" type="number" step="1" min="1"></label>
+                <label>Glyph gap <span class="unit">× h</span><input name="glyphGap" type="number" step="0.05" min="0"></label>
+                <label>Min glyphs per word<input name="minGlyphs" type="number" step="1" min="1"></label>
+                <label>Background area <span class="unit">× page</span><input name="backgroundArea" type="number" step="0.05" min="0" max="1"></label>
+                <label>Min asset size <span class="unit">pt</span><input name="minAssetSize" type="number" step="0.5" min="0"></label>
+                <p class="hint">Re-detecting replaces this page's auto boxes. Hand-drawn boxes are kept.</p>
+                <button type="submit" class="btn btn-primary"><i data-icon="rotate-ccw"></i> Re-detect page</button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <section class="canvas" id="stage">
+          <div class="page" id="page">
+            <canvas id="canvas"></canvas>
+            <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+          </div>
+        </section>
+        <div class="legend" id="legend">
+          <span><i class="key auto"></i>Auto</span>
+          <span><i class="key manual"></i>Hand-drawn</span>
+          <span><i class="key selected"></i>Selected</span>
+          <span><i class="key label"></i>Label</span>
+          <span class="legend-hint">Drag on the page to draw a box · Shift-click to multi-select</span>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="exportDialog" class="dialog">
+    <form id="exportForm" method="dialog">
+      <div class="dialog-head">
+        <h2>Export assets</h2>
+        <button type="button" class="icon-btn" id="exportClose" aria-label="Close"><i data-icon="x"></i></button>
+      </div>
+      <p class="muted" id="exportSummary"></p>
+      <fieldset class="formats">
+        <label class="format"><input type="checkbox" name="svg" checked><i data-icon="file-code"></i><span><b>SVG</b><small>Vector, tight viewBox</small></span></label>
+        <label class="format"><input type="checkbox" name="png"><i data-icon="file-image"></i><span><b>PNG</b><small>Rendered from the SVG</small></span></label>
+      </fieldset>
+      <label class="field">PNG scale<input name="scale" type="number" value="3" min="0.5" step="0.5"></label>
+      <label class="field">Output folder<input name="out" type="text" id="outDir" spellcheck="false"></label>
+      <p class="hint" id="exportResult"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-outline" id="exportCancel">Close</button>
+        <button type="submit" class="btn btn-primary"><i data-icon="download"></i> Export</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script type="module" src="/ui/app.js"></script>
 </body>
 </html>

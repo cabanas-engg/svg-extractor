@@ -42,7 +42,7 @@ src/svg.js             element subset → standalone SVG (tight viewBox); SVG �
 src/export.js          batch export, manifest.json, _contact-sheet.png
 src/png.js             tiny PNG encoder for embedded raster images
 src/server.js          local review UI server (node:http, no framework)
-ui/                    review UI (vanilla JS, PDF.js page render + SVG overlay); tokens.css holds all design tokens
+ui/                    review UI (vanilla JS, PDF.js page render + SVG overlay); tokens.css = all design tokens (schemabuddy palette), icons.js = inlined Lucide icons
 tools/make-fixture.mjs generates test/fixtures/mockup.{pdf,ai}
 tools/eval-reference.mjs scores detection against hand-made reference crops
 tools/outline.mjs      outlined-text helper for test sheets (don't use pdfkit's doc.path(svg) — it truncates glyphs)
@@ -144,23 +144,32 @@ the page). A hand-drawn box always recovers them.
 
 ## UI direction: schemabuddy.dev
 
-Nano wants the UI to follow the visual language of schemabuddy.dev (Nano's own
-visual SQL schema explorer — "free, open-source, no backend, no sign-up").
+The review UI follows schemabuddy.dev — Nano's visual SQL schema explorer,
+source in `cabanas-engg/schema-buddy` (React + Tailwind + shadcn/ui). This app
+stays vanilla JS/CSS, so the look is carried over by tokens, not components:
 
-**TODO — still not filled in.** schemabuddy.dev isn't reachable from the
-sandboxes this has been built in (Oct 2026: DNS doesn't resolve via the web
-fetcher, the sandbox proxy blocks it, web search has no trace of it, and
-GitHub search is out of scope for the session). The UI currently uses neutral placeholder
-tokens, all in `ui/tokens.css` (nothing in `app.css` hard-codes a colour), so
-restyling is a token swap. Needed:
+- **Tokens** — `ui/tokens.css` copies schema-buddy's `src/index.css` colour
+  variables verbatim (same names, HSL triplets, used as `hsl(var(--x))`), light
+  in `:root` and dark in `.dark`. To resync, copy the blocks across.
+  Extractor-only tokens map onto that palette: auto boxes = `--primary`
+  (emerald), hand-drawn = `--accent` (purple), selection = `--table-pk` (amber),
+  labels = `--table-column` (blue), label links = `--relationship-line`.
+- **Type** — Space Grotesk (UI) and JetBrains Mono (names, numbers, file
+  paths), from Google Fonts like schema-buddy; system fallbacks offline.
+- **Theme** — dark by default (`<html class="dark">`), sun/moon toggle,
+  choice kept in `localStorage['svgx-theme']`.
+- **Layout** — schema-buddy's app view: left sidebar (brand tile + title +
+  10px subtitle, collapse button; tabs; asset list; primary action with
+  `glow-primary` + outline secondary buttons in a 2-column grid), slim top bar,
+  toolbar with mono stat counters on the left and a bordered segmented control
+  group on the right (zoom − % + · fit · Tuning), canvas as a bordered,
+  rounded panel on `--background / 0.5` with a dot grid. Popovers, the export
+  dialog and toasts use the card/popover tokens.
+- **Icons** — Lucide (same set as schema-buddy), inlined in `ui/icons.js`
+  (generated from `lucide-react` 0.462.0; ISC). Use `<i data-icon="name">` in
+  HTML or `icon(name)` in JS.
 
-- 1–2 desktop screenshots of schemabuddy.dev (mobile too if this should be
-  responsive — the layout already stacks below 820px).
-- Anything specifically to carry over (a colour, a layout pattern, a font) vs.
-  things this app should do differently.
-
-Then record the palette (hex), typography, spacing scale and component patterns
-here.
+Nothing in `app.css` hard-codes a colour; everything goes through tokens.
 
 ## Decisions taken (provisional — confirm with Nano)
 
@@ -177,6 +186,7 @@ here.
   model with merge/split/manual/resize/rename/exclude, SVG+PNG export,
   manifest, contact sheet, review UI, CLI, regression tests (fixture only).
 - Validated against the 18 LiftCom reference crops (18/18).
+- Review UI restyled to match schemabuddy.dev (dark default + light toggle).
 - Next: run against a real AES mockup source file (`.ai`/PDF, into
-  `test/fixtures/real/`) to check real spacing and labels; schemabuddy styling;
-  OCR naming for outlined labels.
+  `test/fixtures/real/`) to check real spacing and labels; OCR naming for
+  outlined labels.

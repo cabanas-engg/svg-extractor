@@ -3,8 +3,10 @@
 // coordinate space the extractor uses. Thumbnails in the sidebar are the actual
 // exported SVGs, so a bad crop is visible before export.
 import * as pdfjs from '/pdfjs/pdf.mjs';
+import { icon, hydrateIcons } from '/ui/icons.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.mjs';
+hydrateIcons();
 
 const $ = (s) => document.querySelector(s);
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -15,6 +17,7 @@ const ui = {
   pageNum: 1,
   zoom: null, // null = fit width
   selected: new Set(),
+  scope: 'page', // sidebar list: 'page' | 'all'
   version: 0,
   renderTask: null,
 };
@@ -61,10 +64,10 @@ function toast(msg) {
 // ---------------------------------------------------------------- render
 
 const pageInfo = () => ui.data.pages.find((p) => p.page === ui.pageNum);
-// Current page's assets in reading order (rows by vertical overlap, then left to right).
-function pageAssets() {
+// A page's assets in reading order (rows by vertical overlap, then left to right).
+function pageAssets(pageNum = ui.pageNum) {
   const rows = [];
-  for (const a of ui.data.assets.filter((x) => x.page === ui.pageNum).sort((p, q) => p.bbox[1] - q.bbox[1])) {
+  for (const a of ui.data.assets.filter((x) => x.page === pageNum).sort((p, q) => p.bbox[1] - q.bbox[1])) {
     const cy = (a.bbox[1] + a.bbox[3]) / 2;
     const row = rows.find((r) => cy >= r.top && cy <= r.bottom);
     if (row) {
@@ -78,14 +81,15 @@ function pageAssets() {
 function effectiveZoom() {
   if (ui.zoom) return ui.zoom;
   const stage = $('#stage');
-  return Math.max(0.2, (stage.clientWidth - 48) / pageInfo().width);
+  const pad = parseFloat(getComputedStyle(stage).paddingLeft) * 2 + 2;
+  return Math.max(0.2, (stage.clientWidth - pad) / pageInfo().width);
 }
 
 async function renderPage() {
   const info = pageInfo();
   const zoom = effectiveZoom();
   $('#zoomLabel').textContent = `${Math.round(zoom * 100)}%`;
-  $('#pageLabel').textContent = `Page ${ui.pageNum} / ${ui.data.pages.length}`;
+  $('#pageLabel').textContent = `Page ${ui.pageNum} of ${ui.data.pages.length}`;
   const el = $('#page');
   el.style.width = `${info.width * zoom}px`;
   el.style.height = `${info.height * zoom}px`;
@@ -128,10 +132,16 @@ function drawOverlay() {
       const lb = a.labelBbox;
       svgEl('line', { class: 'link', x1: (x0 + x1) / 2, y1: a.labelBbox[1] > y1 ? y1 : y0, x2: (lb[0] + lb[2]) / 2, y2: lb[1] > y1 ? lb[1] : lb[3] }, svg);
     }
+    const state = ui.selected.has(a.id) ? 'selected' : a.exclude ? 'excluded' : a.kind === 'manual' ? 'manual' : '';
     const cls = ['box', a.kind, a.exclude ? 'excluded' : '', ui.selected.has(a.id) ? 'selected' : ''].join(' ');
     const r = svgEl('rect', { class: cls, x: x0, y: y0, width: x1 - x0, height: y1 - y0, 'data-id': a.id }, svg);
     svgEl('title', {}, r).textContent = a.name;
-    const tag = svgEl('text', { class: 'tag', x: x0, y: y0 - 3 / zoom, 'font-size': 9 / zoom, 'stroke-width': 3 / zoom }, svg);
+    // name pill above the box, constant on-screen size (mono ≈ 0.6em per char);
+    // zoomed far out they'd bury the artwork, so the list carries the names
+    if (zoom < 0.5) continue;
+    const fs = 9 / zoom, padX = 4 / zoom, h = 13 / zoom;
+    svgEl('rect', { class: `tag-bg ${state}`, x: x0, y: y0 - h, width: a.name.length * fs * 0.6 + padX * 2, height: h, rx: 2 / zoom }, svg);
+    const tag = svgEl('text', { class: 'tag', x: x0 + padX, y: y0 - h / 2, 'font-size': fs, 'dominant-baseline': 'central' }, svg);
     tag.textContent = a.name;
   }
   // resize handles for a single selection
@@ -147,39 +157,79 @@ function drawOverlay() {
   }
 }
 
+function assetItem(a) {
+  const li = document.createElement('li');
+  li.className = `item${ui.selected.has(a.id) ? ' selected' : ''}${a.exclude ? ' excluded' : ''}`;
+  li.dataset.id = a.id;
+  const w = (a.bbox[2] - a.bbox[0]).toFixed(0), h = (a.bbox[3] - a.bbox[1]).toFixed(0);
+  const swatches = [...(a.styles?.fills || []).map((c) => [c, 'fill']), ...(a.styles?.strokes || []).map((c) => [c, 'stroke'])]
+    .map(([c, k]) => `<span class="swatch" title="${k} ${c}" style="background:${c}"></span>`)
+    .join('');
+  const id = encodeURIComponent(a.id);
+  const kind = a.exclude ? '<span class="badge excluded">excluded</span>' : `<span class="badge ${a.kind === 'manual' ? 'manual' : ''}">${a.kind === 'manual' ? 'hand-drawn' : a.kind}</span>`;
+  li.innerHTML = `
+    <div class="thumb"><img alt="" loading="lazy" src="/api/assets/${id}.svg?v=${ui.version}"></div>
+    <div class="meta">
+      <input type="text" value="${escapeAttr(a.name)}" aria-label="Asset name" spellcheck="false">
+      <div class="row">${kind}<span class="mono">${w}×${h}pt</span>${swatches}</div>
+      <div class="row">
+        <a class="dl" href="/api/assets/${id}.svg?download" data-icon-slot>SVG</a>
+        <a class="dl" href="/api/assets/${id}.png?download&scale=3" data-icon-slot>PNG@3x</a>
+        ${a.labelText ? `<span class="badge label" title="nearest label">${escapeAttr(a.labelText)}</span>` : ''}
+      </div>
+    </div>`;
+  for (const dl of li.querySelectorAll('[data-icon-slot]')) dl.prepend(icon('download'));
+  const input = li.querySelector('input');
+  input.addEventListener('change', () => mutate('PATCH', `/api/assets/${id}`, { name: input.value }));
+  input.addEventListener('keydown', (e) => e.key === 'Enter' && input.blur());
+  li.addEventListener('click', async (e) => {
+    if (e.target.closest('a, input')) return;
+    if (a.page !== ui.pageNum) await goPage(a.page);
+    select(a.id, e.shiftKey || e.metaKey || e.ctrlKey);
+  });
+  return li;
+}
+
 function renderList() {
   const list = $('#list');
-  const assets = pageAssets();
+  const pages = ui.scope === 'all' ? ui.data.pages.map((p) => p.page) : [ui.pageNum];
+  const nodes = [];
+  for (const n of pages) {
+    const assets = pageAssets(n);
+    if (ui.scope === 'all' && assets.length) {
+      const h = document.createElement('li');
+      h.className = 'page-heading';
+      h.textContent = `Page ${n} · ${assets.length}`;
+      nodes.push(h);
+    }
+    nodes.push(...assets.map(assetItem));
+  }
+  if (!nodes.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = 'No assets on this page. Drag on the page to draw one, or adjust Tuning and re-detect.';
+    nodes.push(li);
+  }
+  list.replaceChildren(...nodes);
   const included = ui.data.assets.filter((a) => !a.exclude).length;
-  $('#count').textContent = `${assets.length} on page · ${included} to export`;
-  list.replaceChildren(
-    ...assets.map((a) => {
-      const li = document.createElement('li');
-      li.className = `item${ui.selected.has(a.id) ? ' selected' : ''}${a.exclude ? ' excluded' : ''}`;
-      li.dataset.id = a.id;
-      const w = (a.bbox[2] - a.bbox[0]).toFixed(0), h = (a.bbox[3] - a.bbox[1]).toFixed(0);
-      const swatches = [...(a.styles?.fills || []).map((c) => [c, 'fill']), ...(a.styles?.strokes || []).map((c) => [c, 'stroke'])]
-        .map(([c, k]) => `<span class="swatch" title="${k} ${c}" style="background:${c}"></span>`)
-        .join('');
-      li.innerHTML = `
-        <div class="thumb"><img alt="" loading="lazy" src="/api/assets/${encodeURIComponent(a.id)}.svg?v=${ui.version}"></div>
-        <div class="meta">
-          <input type="text" value="${escapeAttr(a.name)}" aria-label="Asset name" spellcheck="false">
-          <div class="sub"><span>${a.kind}</span><span>${w}×${h}pt</span>${swatches}${a.exclude ? '<span>excluded</span>' : ''}</div>
-          <div class="sub">
-            <a href="/api/assets/${encodeURIComponent(a.id)}.svg?download">SVG</a>
-            <a href="/api/assets/${encodeURIComponent(a.id)}.png?download&scale=3">PNG@3x</a>
-            ${a.labelText ? `<span title="nearest label">“${escapeAttr(a.labelText)}”</span>` : ''}
-          </div>
-        </div>`;
-      const input = li.querySelector('input');
-      input.addEventListener('change', () => mutate('PATCH', `/api/assets/${encodeURIComponent(a.id)}`, { name: input.value }));
-      input.addEventListener('keydown', (e) => e.key === 'Enter' && input.blur());
-      li.addEventListener('click', (e) => {
-        if (e.target.closest('a, input')) return;
-        select(a.id, e.shiftKey || e.metaKey || e.ctrlKey);
-      });
-      return li;
+  $('#count').textContent = `${included}/${ui.data.assets.length} to export`;
+}
+
+function renderStats() {
+  const on = ui.data.assets.filter((a) => a.page === ui.pageNum);
+  const stats = [
+    ['assets', 'shapes', on.length, 'Assets on this page'],
+    ['manual', 'square-dashed-mouse-pointer', on.filter((a) => a.kind === 'manual').length, 'Hand-drawn boxes'],
+    ['excluded', 'eye-off', on.filter((a) => a.exclude).length, 'Excluded from export'],
+    ['labels', 'tag', ui.data.labels.filter((l) => l.page === ui.pageNum).length, 'Text labels found'],
+  ];
+  $('#stats').replaceChildren(
+    ...stats.map(([cls, ic, n, title]) => {
+      const s = document.createElement('span');
+      s.className = `stat ${cls}`;
+      s.title = title;
+      s.append(icon(ic), String(n));
+      return s;
     }),
   );
 }
@@ -199,6 +249,7 @@ function renderButtons() {
 function renderAll() {
   drawOverlay();
   renderList();
+  renderStats();
   renderButtons();
 }
 
@@ -208,6 +259,7 @@ function select(id, additive) {
   else ui.selected.add(id);
   renderAll();
   document.querySelector(`.item[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest' });
+  document.querySelector(`#overlay .box[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 
 // ---------------------------------------------------------------- overlay interaction
@@ -333,10 +385,72 @@ const setZoom = async (z) => {
 $('#zoomIn').onclick = () => setZoom(effectiveZoom() * 1.25);
 $('#zoomOut').onclick = () => setZoom(effectiveZoom() / 1.25);
 $('#zoomFit').onclick = () => setZoom(null);
+$('#zoomLabel').onclick = () => setZoom(null);
+
+// ---------------------------------------------------------------- chrome: theme, sidebar, tabs, popover, dialog
+
+function renderThemeToggle() {
+  const dark = document.documentElement.classList.contains('dark');
+  $('#themeToggle').replaceChildren(icon(dark ? 'sun' : 'moon'));
+}
+$('#themeToggle').onclick = () => {
+  const dark = document.documentElement.classList.toggle('dark');
+  try {
+    localStorage.setItem('svgx-theme', dark ? 'dark' : 'light');
+  } catch {}
+  renderThemeToggle();
+};
+renderThemeToggle();
+
+async function setSidebar(open) {
+  $('#app').classList.toggle('collapsed', !open);
+  $('#expandBtn').hidden = open;
+  $('#topbarBrand').hidden = open;
+  if (!ui.zoom && ui.pdf) {
+    await renderPage();
+    drawOverlay();
+  }
+}
+$('#collapseBtn').onclick = () => setSidebar(false);
+$('#expandBtn').onclick = () => setSidebar(true);
+
+for (const tab of document.querySelectorAll('.tab')) {
+  tab.onclick = () => {
+    ui.scope = tab.dataset.scope;
+    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t === tab));
+    renderList();
+  };
+}
+
+const tune = $('#tuneForm');
+$('#tuneBtn').onclick = (e) => {
+  e.stopPropagation();
+  tune.hidden = !tune.hidden;
+  $('#tuneBtn').classList.toggle('open', !tune.hidden);
+};
+document.addEventListener('pointerdown', (e) => {
+  if (!tune.hidden && !e.target.closest('.popover-wrap')) {
+    tune.hidden = true;
+    $('#tuneBtn').classList.remove('open');
+  }
+});
+
+const exportDialog = $('#exportDialog');
+function openExport() {
+  const included = ui.data.assets.filter((a) => !a.exclude).length;
+  $('#exportSummary').textContent = `${included} of ${ui.data.assets.length} assets will be exported, plus manifest.json and a contact sheet.`;
+  $('#exportResult').textContent = '';
+  exportDialog.showModal();
+}
+$('#exportOpen').onclick = openExport;
+$('#exportClose').onclick = () => exportDialog.close();
+$('#exportCancel').onclick = () => exportDialog.close();
 
 document.addEventListener('keydown', (e) => {
-  if (e.target.closest('input, textarea')) return;
-  if (e.key === 'm' || e.key === 'M') mergeSelected();
+  if (e.target.closest('input, textarea') || exportDialog.open) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'e' || e.key === 'E') openExport();
+  else if (e.key === 'm' || e.key === 'M') mergeSelected();
   else if (e.key === 's' || e.key === 'S') splitSelected();
   else if (e.key === 'x' || e.key === 'X') excludeSelected();
   else if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
@@ -356,7 +470,11 @@ $('#tuneForm').addEventListener('submit', async (e) => {
   const options = Object.fromEntries([...e.target.querySelectorAll('input')].map((i) => [i.name, Number(i.value)]));
   ui.selected.clear();
   const r = await mutate('POST', '/api/redetect', { page: ui.pageNum, options });
-  if (r) toast(`Re-detected: ${pageAssets().length} assets on this page`);
+  if (r) {
+    tune.hidden = true;
+    $('#tuneBtn').classList.remove('open');
+    toast(`Re-detected: ${pageAssets().length} assets on this page`);
+  }
 });
 
 $('#exportForm').addEventListener('submit', async (e) => {
@@ -391,7 +509,7 @@ window.addEventListener('resize', () => {
   $('#file').textContent = ui.data.file;
   $('#outDir').value = ui.data.exportDir;
   $('#warnings').innerHTML = [
-    ui.data.stale ? '<div>⚠ Source file changed since this session was saved — consider re-detecting.</div>' : '',
+    ui.data.stale ? '<div>⚠ Source file changed since this session was saved; consider re-detecting.</div>' : '',
     ...ui.data.warnings.map((w) => `<div>⚠ ${escapeAttr(w)}</div>`),
   ].join('');
   ui.pageNum = ui.data.pages[0].page;

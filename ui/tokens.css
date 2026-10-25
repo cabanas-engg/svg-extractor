@@ -1,63 +1,85 @@
 /*
  * Design tokens — the ONLY place colours, type and spacing are defined.
  *
- * TODO(schemabuddy): the UI is meant to follow schemabuddy.dev's visual
- * language, but nobody has captured its palette/typography yet (the site
- * isn't reachable from the sandboxes this was built in). These are neutral
- * placeholders. Once screenshots/hex values are in, replace the values below;
- * nothing in app.css hard-codes a colour.
+ * Matches schemabuddy.dev (cabanas-engg/schema-buddy, src/index.css +
+ * tailwind.config.ts). Colour tokens are copied verbatim as HSL triplets under
+ * the same names, so keeping the two apps in sync is a copy-paste: use them as
+ * hsl(var(--name)). Dark is the default, as on schemabuddy.dev (<html class="dark">).
+ *
+ * Extractor-specific tokens (--box-*) are mapped onto schema-buddy's palette:
+ * auto boxes use the primary emerald, hand-drawn ones the accent purple, the
+ * selection the PK amber, labels the column blue.
  */
 :root {
-  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-md: 13px;
-  --text-lg: 15px;
+  --font-sans: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --radius: 0.5rem;
 
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --radius-sm: 4px;
-  --radius-md: 6px;
+  --background: 220 20% 97%;
+  --foreground: 225 25% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 225 25% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 225 25% 12%;
+  --primary: 160 84% 32%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 14% 92%;
+  --secondary-foreground: 225 20% 20%;
+  --muted: 220 14% 92%;
+  --muted-foreground: 215 12% 45%;
+  --accent: 270 60% 55%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 13% 87%;
+  --input: 220 13% 87%;
+  --ring: 160 84% 32%;
+  --sidebar-background: 220 16% 94%;
+  --sidebar-foreground: 225 20% 25%;
+  --sidebar-border: 220 13% 87%;
+  --surface-elevated: 220 16% 95%;
+  --table-column: 210 60% 35%;
+  --table-type: 270 55% 45%;
+  --table-pk: 40 90% 42%;
+  --table-fk: 340 75% 48%;
+  --relationship-line: 160 50% 35%;
 
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --border: #dde1e7;
-  --text: #1c2128;
-  --text-muted: #636c76;
-  --accent: #2563eb;
-  --accent-contrast: #ffffff;
-  --danger: #c93c37;
-  --canvas-bg: #e9ecf0;
-
-  /* overlay boxes on the page */
-  --box-auto: #2563eb;
-  --box-manual: #9333ea;
-  --box-selected: #f59e0b;
-  --box-excluded: #9aa3ad;
-  --box-label: #10b981;
+  --box-auto: var(--primary);
+  --box-manual: var(--accent);
+  --box-selected: var(--table-pk);
+  --box-excluded: var(--muted-foreground);
+  --box-label: var(--table-column);
+  --checker: 0 0% 92%;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1216;
-    --surface: #171b21;
-    --surface-2: #1f242c;
-    --border: #2c333d;
-    --text: #e6e9ee;
-    --text-muted: #8b949e;
-    --accent: #4f8cff;
-    --accent-contrast: #0b0e12;
-    --danger: #f06a64;
-    --canvas-bg: #0b0e12;
-    --box-auto: #4f8cff;
-    --box-manual: #b77dff;
-    --box-selected: #fbbf24;
-    --box-excluded: #6b7480;
-    --box-label: #34d399;
-  }
+.dark {
+  --background: 220 31.58% 7.45%;
+  --foreground: 210 20% 90%;
+  --card: 225 20% 11%;
+  --card-foreground: 210 20% 90%;
+  --popover: 225 20% 11%;
+  --popover-foreground: 210 20% 90%;
+  --primary: 160 84% 39%;
+  --primary-foreground: 225 25% 8%;
+  --secondary: 225 15% 16%;
+  --secondary-foreground: 210 20% 80%;
+  --muted: 225 15% 14%;
+  --muted-foreground: 215 12% 50%;
+  --accent: 270 60% 60%;
+  --accent-foreground: 210 20% 95%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 225 15% 18%;
+  --input: 225 15% 18%;
+  --ring: 160 84% 39%;
+  --sidebar-background: 225 22% 10%;
+  --sidebar-foreground: 210 20% 80%;
+  --sidebar-border: 225 15% 18%;
+  --surface-elevated: 225 18% 13%;
+  --table-column: 210 60% 60%;
+  --table-type: 270 60% 60%;
+  --table-pk: 45 93% 58%;
+  --table-fk: 340 82% 60%;
+  --relationship-line: 160 50% 40%;
+  --checker: 225 10% 86%;
 }
