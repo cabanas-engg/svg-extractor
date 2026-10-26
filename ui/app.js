@@ -18,7 +18,7 @@ const ui = {
   zoom: null, // null = fit width
   selected: new Set(),
   scope: 'page', // sidebar list: 'page' | 'all'
-  version: 0,
+  filter: '',
   renderTask: null,
 };
 
@@ -39,7 +39,6 @@ async function mutate(method, url, body) {
   try {
     const r = await api(method, url, body);
     ui.data = { ...ui.data, ...pick(r) };
-    ui.version++;
     for (const id of [...ui.selected]) if (!ui.data.assets.some((a) => a.id === id)) ui.selected.delete(id);
     renderAll();
     return r;
@@ -85,7 +84,14 @@ function effectiveZoom() {
   return Math.max(0.2, (stage.clientWidth - pad) / pageInfo().width);
 }
 
+// Size the page for the current zoom (synchronous, so callers can fix up the
+// scroll position straight after), then paint the canvas.
 async function renderPage() {
+  layoutPage();
+  await paintPage();
+}
+
+function layoutPage() {
   const info = pageInfo();
   const zoom = effectiveZoom();
   $('#zoomLabel').textContent = `${Math.round(zoom * 100)}%`;
@@ -94,20 +100,34 @@ async function renderPage() {
   el.style.width = `${info.width * zoom}px`;
   el.style.height = `${info.height * zoom}px`;
   $('#overlay').setAttribute('viewBox', `0 0 ${info.width} ${info.height}`);
+  // A different page or file: blank the old picture rather than show it
+  // stretched under the new boxes until the new one has painted.
+  if (ui.shown?.pdf !== ui.pdf || ui.shown?.page !== ui.pageNum) {
+    $('#canvas').width = 0;
+    ui.shown = { pdf: ui.pdf, page: ui.pageNum };
+  }
+}
 
+async function paintPage() {
+  const zoom = effectiveZoom();
   const page = await ui.pdf.getPage(ui.pageNum);
   const dpr = window.devicePixelRatio || 1;
   const viewport = page.getViewport({ scale: zoom * dpr });
-  const canvas = $('#canvas');
+  // Render off-screen and swap in when done: resizing the visible canvas
+  // would blank it for the length of the render.
+  const canvas = document.createElement('canvas');
+  canvas.id = 'canvas';
   canvas.width = Math.floor(viewport.width);
   canvas.height = Math.floor(viewport.height);
   ui.renderTask?.cancel();
-  ui.renderTask = page.render({ canvasContext: canvas.getContext('2d'), viewport });
+  const task = (ui.renderTask = page.render({ canvasContext: canvas.getContext('2d'), viewport }));
   try {
-    await ui.renderTask.promise;
+    await task.promise;
   } catch (e) {
-    if (e?.name !== 'RenderingCancelledException') throw e;
+    if (e?.name === 'RenderingCancelledException') return;
+    throw e;
   }
+  if (ui.renderTask === task) $('#canvas').replaceWith(canvas);
 }
 
 function svgEl(tag, attrs, parent) {
@@ -157,6 +177,33 @@ function drawOverlay() {
   }
 }
 
+// A thumbnail URL keyed on everything that changes its pixels, so an edit only
+// reloads the thumbnails it touched and the rest come from the browser cache
+// (the server marks keyed URLs cacheable).
+function thumbKey(a) {
+  const s = JSON.stringify([ui.data.docId, a.bbox, a.kind, a.elementIds, ui.data.options.pad]);
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
+async function copySVG(a, btn) {
+  try {
+    const res = await fetch(`/api/assets/${encodeURIComponent(a.id)}.svg?k=${thumbKey(a)}`);
+    if (!res.ok) throw new Error((await res.json()).error);
+    await navigator.clipboard.writeText(await res.text());
+    btn.replaceChildren(icon('check'), 'Copied');
+    setTimeout(() => btn.replaceChildren(icon('copy'), 'Copy'), 1500);
+  } catch (e) {
+    toast(`Could not copy: ${e.message}`);
+  }
+}
+
+// Hovering a list item outlines its box on the page.
+function hoverBox(id, on) {
+  document.querySelector(`#overlay .box[data-id="${CSS.escape(id)}"]`)?.classList.toggle('hover', on);
+}
+
 function assetItem(a) {
   const li = document.createElement('li');
   li.className = `item${ui.selected.has(a.id) ? ' selected' : ''}${a.exclude ? ' excluded' : ''}`;
@@ -168,22 +215,28 @@ function assetItem(a) {
   const id = encodeURIComponent(a.id);
   const kind = a.exclude ? '<span class="badge excluded">excluded</span>' : `<span class="badge ${a.kind === 'manual' ? 'manual' : ''}">${a.kind === 'manual' ? 'hand-drawn' : a.kind}</span>`;
   li.innerHTML = `
-    <div class="thumb"><img alt="" loading="lazy" src="/api/assets/${id}.svg?v=${ui.version}"></div>
+    <div class="thumb"><img alt="" loading="lazy" src="/api/assets/${id}.svg?k=${thumbKey(a)}"></div>
     <div class="meta">
       <input type="text" value="${escapeAttr(a.name)}" aria-label="Asset name" spellcheck="false">
       <div class="row">${kind}<span class="mono">${w}×${h}pt</span>${swatches}</div>
       <div class="row">
         <a class="dl" href="/api/assets/${id}.svg?download" data-icon-slot>SVG</a>
         <a class="dl" href="/api/assets/${id}.png?download&scale=3" data-icon-slot>PNG@3x</a>
+        <button type="button" class="dl copy" title="Copy SVG markup to the clipboard">Copy</button>
         ${a.labelText ? `<span class="badge label" title="nearest label">${escapeAttr(a.labelText)}</span>` : ''}
       </div>
     </div>`;
   for (const dl of li.querySelectorAll('[data-icon-slot]')) dl.prepend(icon('download'));
+  const copy = li.querySelector('.copy');
+  copy.prepend(icon('copy'));
+  copy.addEventListener('click', () => copySVG(a, copy));
+  li.addEventListener('mouseenter', () => hoverBox(a.id, true));
+  li.addEventListener('mouseleave', () => hoverBox(a.id, false));
   const input = li.querySelector('input');
   input.addEventListener('change', () => mutate('PATCH', `/api/assets/${id}`, { name: input.value }));
   input.addEventListener('keydown', (e) => e.key === 'Enter' && input.blur());
   li.addEventListener('click', async (e) => {
-    if (e.target.closest('a, input')) return;
+    if (e.target.closest('a, input, button')) return;
     if (a.page !== ui.pageNum) await goPage(a.page);
     select(a.id, e.shiftKey || e.metaKey || e.ctrlKey);
   });
@@ -194,8 +247,10 @@ function renderList() {
   const list = $('#list');
   const pages = ui.scope === 'all' ? ui.data.pages.map((p) => p.page) : [ui.pageNum];
   const nodes = [];
+  const q = ui.filter.trim().toLowerCase();
+  const matches = (a) => !q || a.name.toLowerCase().includes(q) || (a.labelText || '').toLowerCase().includes(q);
   for (const n of pages) {
-    const assets = pageAssets(n);
+    const assets = pageAssets(n).filter(matches);
     if (ui.scope === 'all' && assets.length) {
       const h = document.createElement('li');
       h.className = 'page-heading';
@@ -207,7 +262,9 @@ function renderList() {
   if (!nodes.length) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = 'No assets on this page. Drag on the page to draw one, or adjust Tuning and re-detect.';
+    li.textContent = q
+      ? `Nothing matches “${ui.filter.trim()}”.`
+      : 'No assets on this page. Drag on the page to draw one, or adjust Tuning and re-detect.';
     nodes.push(li);
   }
   list.replaceChildren(...nodes);
@@ -377,12 +434,15 @@ $('#deleteBtn').onclick = deleteSelected;
 $('#undoBtn').onclick = () => undo('undo');
 $('#redoBtn').onclick = () => undo('redo');
 
+// Boxes and the list don't wait for the canvas: PDF.js paints in animation
+// frames, which a background tab never gets, and a big page takes a while.
 async function goPage(n) {
   ui.pageNum = n;
   ui.selected.clear();
-  await renderPage();
+  const painted = renderPage();
   renderAll();
   fillTuning();
+  await painted;
 }
 // Step through loaded pages (a --pages filter can leave gaps).
 const stepPage = (d) => {
@@ -392,11 +452,38 @@ const stepPage = (d) => {
 $('#prev').onclick = () => stepPage(-1);
 $('#next').onclick = () => stepPage(1);
 
-const setZoom = async (z) => {
-  ui.zoom = z;
-  await renderPage();
+const MIN_ZOOM = 0.1, MAX_ZOOM = 8;
+let paintTimer;
+// Zoom keeping the point under `at` (a pointer event; default: the view's
+// centre) where it is. With paint: false the canvas is only stretched by CSS
+// and repainted once zooming pauses, so a pinch or a fast scroll stays smooth.
+async function setZoom(z, at, { paint = true } = {}) {
+  const stage = $('#stage'), page = $('#page');
+  const old = effectiveZoom();
+  const sr = stage.getBoundingClientRect(), pr = page.getBoundingClientRect();
+  const cx = at ? at.clientX : sr.left + sr.width / 2, cy = at ? at.clientY : sr.top + sr.height / 2;
+  const px = (cx - pr.left) / old, py = (cy - pr.top) / old; // pt under the anchor
+  ui.zoom = z === null ? null : Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+  layoutPage();
+  if (ui.zoom !== null) {
+    const nz = effectiveZoom(), np = page.getBoundingClientRect();
+    stage.scrollLeft += np.left + px * nz - cx;
+    stage.scrollTop += np.top + py * nz - cy;
+  }
   drawOverlay();
-};
+  clearTimeout(paintTimer);
+  if (paint) await paintPage();
+  else paintTimer = setTimeout(paintPage, 150);
+}
+$('#stage').addEventListener(
+  'wheel',
+  (e) => {
+    if (!(e.ctrlKey || e.metaKey) || ui.data?.empty !== false) return;
+    e.preventDefault(); // otherwise the browser zooms the whole UI
+    setZoom(effectiveZoom() * Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0025)), e, { paint: false });
+  },
+  { passive: false },
+);
 $('#zoomIn').onclick = () => setZoom(effectiveZoom() * 1.25);
 $('#zoomOut').onclick = () => setZoom(effectiveZoom() / 1.25);
 $('#zoomFit').onclick = () => setZoom(null);
@@ -463,8 +550,24 @@ $('#exportOpen').onclick = openExport;
 $('#exportClose').onclick = () => exportDialog.close();
 $('#exportCancel').onclick = () => exportDialog.close();
 
+const helpDialog = $('#helpDialog');
+$('#helpBtn').onclick = () => helpDialog.showModal();
+$('#helpClose').onclick = () => helpDialog.close();
+
+const filter = $('#filter');
+filter.addEventListener('input', () => {
+  ui.filter = filter.value;
+  if (ui.data?.empty === false) renderList();
+});
+filter.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  filter.value = ui.filter = '';
+  filter.blur();
+  if (ui.data?.empty === false) renderList();
+});
+
 document.addEventListener('keydown', (e) => {
-  if (e.target.closest('input, textarea') || exportDialog.open) return;
+  if ((e.target instanceof Element && e.target.closest('input, textarea')) || exportDialog.open || helpDialog.open) return;
   const mod = e.metaKey || e.ctrlKey;
   if (mod && ui.data?.empty === false && (e.key === 'z' || e.key === 'Z' || (e.key === 'y' && e.ctrlKey))) {
     e.preventDefault();
@@ -478,7 +581,12 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key === 'o' || e.key === 'O') return $('#fileInput').click();
+  if (e.key === '?') return helpDialog.showModal();
   if (ui.data?.empty !== false) return;
+  if (e.key === '/') {
+    e.preventDefault();
+    return filter.focus();
+  }
   if (e.key === 'e' || e.key === 'E') openExport();
   else if (e.key === 'm' || e.key === 'M') mergeSelected();
   else if (e.key === 's' || e.key === 'S') splitSelected();
@@ -489,6 +597,9 @@ document.addEventListener('keydown', (e) => {
     renderAll();
   } else if (e.key === 'ArrowRight') stepPage(1);
   else if (e.key === 'ArrowLeft') stepPage(-1);
+  else if (e.key === '+' || e.key === '=') setZoom(effectiveZoom() * 1.25);
+  else if (e.key === '-' || e.key === '_') setZoom(effectiveZoom() / 1.25);
+  else if (e.key === '0') setZoom(null);
 });
 
 function fillTuning() {
@@ -497,7 +608,8 @@ function fillTuning() {
 }
 $('#tuneForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const options = Object.fromEntries([...e.target.querySelectorAll('input')].map((i) => [i.name, Number(i.value)]));
+  // raw strings: the server rejects an empty field instead of reading it as 0
+  const options = Object.fromEntries([...e.target.querySelectorAll('input')].map((i) => [i.name, i.value.trim()]));
   ui.selected.clear();
   const r = await mutate('POST', '/api/redetect', { page: ui.pageNum, options });
   if (r) {
@@ -710,17 +822,17 @@ async function showDocument() {
     ...ui.data.warnings.map((w) => `<div>⚠ ${escapeAttr(w)}</div>`),
   ].join('');
   ui.selected.clear();
-  ui.version++;
   ui.zoom = null;
   ui.pageNum = ui.data.pages[0].page;
   ui.renderTask?.cancel();
   await ui.pdf?.destroy();
   // cache-buster: the URL is the same for every file
   ui.pdf = await pdfjs.getDocument({ url: `/api/source?v=${Date.now()}` }).promise;
-  await renderPage();
+  const painted = renderPage();
   renderAll();
   fillTuning();
   renderRecent();
+  await painted;
 }
 
 // ---------------------------------------------------------------- boot

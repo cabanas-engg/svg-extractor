@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SVG Extractor</title>
+  <meta name="description" content="Pull every icon and diagram out of an Illustrator or PDF mockup sheet as clean, standalone SVG and PNG files. No hand-measured crops.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap">
+  <script>
+    // Same rule as the app: dark unless the visitor picked light.
+    try { if (localStorage.getItem('svgx-theme') === 'light') document.documentElement.classList.remove('dark'); } catch {}
+  </script>
+  <style>
+    /* Tokens: the review UI's palette (ui/tokens.css, from schemabuddy.dev). */
+    :root {
+      --font-sans: 'Space Grotesk', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+      --radius: 0.5rem;
+      --background: 220 20% 97%;
+      --foreground: 225 25% 12%;
+      --card: 0 0% 100%;
+      --primary: 160 84% 32%;
+      --primary-foreground: 0 0% 100%;
+      --secondary: 220 14% 92%;
+      --muted-foreground: 215 12% 42%;
+      --accent: 270 60% 55%;
+      --border: 220 13% 87%;
+      --label: 210 60% 40%;
+      --amber: 40 90% 42%;
+      --sheet-shadow: 0 24px 60px rgb(15 23 42 / 0.14);
+      --art-orange: #f26b21;
+      --art-gray: #6e6e73;
+      --art-light: #d9d9de;
+      --art-ink: #2b2b30;
+    }
+    .dark {
+      --background: 220 31.58% 7.45%;
+      --foreground: 210 20% 90%;
+      --card: 225 20% 11%;
+      --primary: 160 84% 39%;
+      --primary-foreground: 225 25% 8%;
+      --secondary: 225 15% 16%;
+      --muted-foreground: 215 12% 58%;
+      --accent: 270 60% 65%;
+      --border: 225 15% 18%;
+      --label: 210 60% 62%;
+      --amber: 45 93% 58%;
+      --sheet-shadow: 0 30px 80px rgb(0 0 0 / 0.5);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font: 16px/1.6 var(--font-sans);
+      color: hsl(var(--foreground));
+      background: hsl(var(--background));
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; }
+    code, pre, .mono { font-family: var(--font-mono); }
+    .wrap { width: min(1120px, 100% - 32px); margin-inline: auto; }
+    .muted { color: hsl(var(--muted-foreground)); }
+    .icon { width: 18px; height: 18px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    :focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; border-radius: 4px; }
+
+    /* ------------------------------------------------------------ nav */
+    .nav {
+      position: sticky; top: 0; z-index: 10;
+      background: hsl(var(--background) / 0.8); backdrop-filter: blur(10px);
+      border-bottom: 1px solid hsl(var(--border));
+    }
+    .nav .wrap { display: flex; align-items: center; gap: 24px; height: 60px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; text-decoration: none; }
+    .brand-mark {
+      width: 30px; height: 30px; border-radius: calc(var(--radius) - 2px); display: grid; place-items: center;
+      background: hsl(var(--primary) / 0.12); color: hsl(var(--primary));
+    }
+    .nav-links { display: flex; gap: 20px; margin-left: auto; font-size: 14px; }
+    .nav-links a { text-decoration: none; color: hsl(var(--muted-foreground)); }
+    .nav-links a:hover { color: hsl(var(--foreground)); }
+    .icon-btn {
+      display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; cursor: pointer;
+      border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) - 2px);
+      background: none; color: hsl(var(--muted-foreground));
+    }
+    .icon-btn:hover { color: hsl(var(--foreground)); background: hsl(var(--secondary)); }
+    .icon-btn .icon { width: 16px; height: 16px; }
+    .dark .sun, :root:not(.dark) .moon { display: block; }
+    .dark .moon, :root:not(.dark) .sun { display: none; }
+
+    /* ------------------------------------------------------------ buttons */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 11px 18px; border-radius: calc(var(--radius) - 2px);
+      font: 500 15px var(--font-sans); text-decoration: none; cursor: pointer; border: 0;
+      transition: opacity 0.15s, background-color 0.15s;
+    }
+    .btn-primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); box-shadow: 0 0 24px hsl(var(--primary) / 0.25); }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-outline { border: 1px solid hsl(var(--border)); color: hsl(var(--foreground)); background: none; }
+    .btn-outline:hover { background: hsl(var(--secondary)); }
+
+    /* ------------------------------------------------------------ hero */
+    .hero { padding: 72px 0 140px; position: relative; overflow: hidden; }
+    .hero::before {
+      content: ''; position: absolute; inset: 0; z-index: -1;
+      background-image: radial-gradient(hsl(var(--border)) 1px, transparent 1px);
+      background-size: 22px 22px;
+      mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, #000 30%, transparent 75%);
+    }
+    .hero .wrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 56px; align-items: center; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; margin-bottom: 20px;
+      border: 1px solid hsl(var(--border)); border-radius: 999px; background: hsl(var(--card));
+      font: 500 12px var(--font-mono); color: hsl(var(--muted-foreground));
+    }
+    .eyebrow b { color: hsl(var(--primary)); font-weight: 600; }
+    h1 { font-size: clamp(36px, 5.2vw, 58px); line-height: 1.05; letter-spacing: -0.03em; margin: 0 0 20px; font-weight: 700; }
+    h1 em { font-style: normal; color: hsl(var(--primary)); }
+    .lede { font-size: 18px; color: hsl(var(--muted-foreground)); margin: 0 0 28px; max-width: 34em; }
+    .ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 28px; }
+    .snippet {
+      display: flex; align-items: center; gap: 10px; max-width: 100%;
+      padding: 10px 10px 10px 14px; border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+      background: hsl(var(--card)); font: 13px var(--font-mono); width: fit-content;
+    }
+    .snippet code { overflow-x: auto; white-space: nowrap; }
+    .snippet .prompt { color: hsl(var(--primary)); user-select: none; }
+    .copy {
+      display: inline-grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; cursor: pointer;
+      border: 1px solid hsl(var(--border)); border-radius: 6px; background: none; color: hsl(var(--muted-foreground));
+    }
+    .copy:hover { color: hsl(var(--foreground)); background: hsl(var(--secondary)); }
+    .copy .icon { width: 14px; height: 14px; }
+    .copy .done { display: none; color: hsl(var(--primary)); }
+    .copy.copied .idle { display: none; }
+    .copy.copied .done { display: block; }
+
+    /* the animated sheet */
+    .stage { position: relative; }
+    .sheet {
+      display: block; width: 100%; height: auto; background: #fff; border-radius: 6px;
+      box-shadow: var(--sheet-shadow); border: 1px solid hsl(var(--border));
+    }
+    .sheet .lbl { font: 600 8.5px var(--font-sans); letter-spacing: 0.08em; fill: var(--art-ink); text-anchor: middle; }
+    .sheet .title { font: 700 15px var(--font-sans); fill: var(--art-ink); }
+    .sheet .det { fill: hsl(160 84% 39% / 0.06); stroke: hsl(160 84% 36%); stroke-width: 1.5; }
+    .sheet .lab { fill: none; stroke: hsl(210 70% 50%); stroke-width: 1; stroke-dasharray: 2 2; }
+    .sheet .pill rect { fill: hsl(160 84% 36%); }
+    .sheet .pill text { font: 500 7px var(--font-mono); fill: #fff; }
+    .sheet .link { stroke: hsl(160 50% 40%); stroke-width: 0.8; }
+
+    .det, .lab, .pill, .link { opacity: 0; animation: show 9s infinite; animation-delay: var(--d, 0s); }
+    .det { stroke-dasharray: 320; stroke-dashoffset: 320; animation-name: draw; }
+    @keyframes draw {
+      0%, 8% { opacity: 0; stroke-dashoffset: 320; }
+      12% { opacity: 1; }
+      20%, 86% { opacity: 1; stroke-dashoffset: 0; }
+      94%, 100% { opacity: 0; stroke-dashoffset: 0; }
+    }
+    @keyframes show {
+      0%, 16% { opacity: 0; transform: translateY(2px); }
+      22%, 86% { opacity: 1; transform: none; }
+      94%, 100% { opacity: 0; }
+    }
+    .files {
+      position: absolute; right: -18px; bottom: -104px; width: 264px;
+      padding: 10px; border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+      background: hsl(var(--card)); box-shadow: 0 16px 40px rgb(0 0 0 / 0.3);
+      font: 11px var(--font-mono);
+    }
+    .files-head { display: flex; justify-content: space-between; color: hsl(var(--muted-foreground)); font-size: 10px; padding: 0 4px 6px; border-bottom: 1px solid hsl(var(--border)); margin-bottom: 4px; }
+    .files-body { position: relative; }
+    .files-wait {
+      position: absolute; inset: 0; display: grid; place-items: center;
+      color: hsl(var(--muted-foreground)); font-size: 11px; animation: wait 9s 1.5s infinite backwards;
+    }
+    /* in step with the file rows (same delay), so the two never overlap */
+    @keyframes wait { 0%, 16% { opacity: 1; } 21%, 95% { opacity: 0; } 100% { opacity: 1; } }
+    .file { display: flex; align-items: center; gap: 8px; padding: 4px; border-radius: 4px; opacity: 0; animation: show 9s infinite; animation-delay: var(--d); }
+    .file .ext { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: hsl(var(--primary) / 0.12); color: hsl(var(--primary)); }
+    .file .ext.json { background: hsl(var(--amber) / 0.14); color: hsl(var(--amber)); }
+    .file .ext.png { background: hsl(var(--accent) / 0.14); color: hsl(var(--accent)); }
+    .file span:last-child { margin-left: auto; color: hsl(var(--muted-foreground)); font-size: 10px; }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .det, .lab, .pill, .link, .file { animation: none; opacity: 1; stroke-dashoffset: 0; }
+      .files-wait { display: none; }
+    }
+
+    /* ------------------------------------------------------------ sections */
+    section { padding: 88px 0; scroll-margin-top: 40px; }
+    .section-head { max-width: 640px; margin-bottom: 44px; }
+    .kicker { font: 600 12px var(--font-mono); text-transform: uppercase; letter-spacing: 0.1em; color: hsl(var(--primary)); margin: 0 0 10px; }
+    h2 { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.12; letter-spacing: -0.02em; margin: 0 0 14px; }
+    h3 { font-size: 18px; margin: 0 0 6px; letter-spacing: -0.01em; }
+    .section-head p { font-size: 17px; color: hsl(var(--muted-foreground)); margin: 0; }
+    .alt { background: hsl(var(--card) / 0.5); border-block: 1px solid hsl(var(--border)); }
+
+    /* before / after */
+    .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .panel { border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) + 4px); background: hsl(var(--card)); padding: 28px; }
+    .panel h3 { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .panel ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+    .panel li { display: flex; gap: 12px; color: hsl(var(--muted-foreground)); font-size: 15px; }
+    .panel li .icon { margin-top: 3px; width: 16px; height: 16px; }
+    .panel.before li .icon { color: hsl(0 72% 60%); }
+    .panel.after { border-color: hsl(var(--primary) / 0.45); box-shadow: 0 0 40px hsl(var(--primary) / 0.08); }
+    .panel.after li .icon { color: hsl(var(--primary)); }
+    .panel li b { color: hsl(var(--foreground)); font-weight: 600; }
+
+    /* steps */
+    .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; counter-reset: step; }
+    .step { border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) + 4px); background: hsl(var(--card)); overflow: hidden; display: flex; flex-direction: column; }
+    .step-art { aspect-ratio: 16 / 10; background: hsl(var(--background)); border-bottom: 1px solid hsl(var(--border)); display: grid; place-items: center; padding: 14px; }
+    .step-art svg { width: 100%; height: 100%; }
+    .step-body { padding: 18px 18px 20px; }
+    .step-body h3::before { counter-increment: step; content: '0' counter(step); display: block; font: 600 11px var(--font-mono); color: hsl(var(--primary)); margin-bottom: 6px; letter-spacing: 0.08em; }
+    .step-body p { margin: 0; font-size: 14px; color: hsl(var(--muted-foreground)); }
+    .art-ink { stroke: hsl(var(--foreground) / 0.75); }
+    .art-dim { stroke: hsl(var(--muted-foreground) / 0.6); }
+    .art-primary { stroke: hsl(var(--primary)); }
+    .art-label { stroke: hsl(var(--label)); }
+    .art-amber { stroke: hsl(var(--amber)); }
+    .art-accent { stroke: hsl(var(--accent)); }
+    .art-text { font: 9px var(--font-mono); fill: hsl(var(--muted-foreground)); }
+    .art-text.strong { fill: hsl(var(--foreground)); }
+
+    /* review UI mock */
+    .ui-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 40px; align-items: center; }
+    .mock {
+      border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) + 4px); overflow: hidden;
+      background: hsl(var(--background)); box-shadow: var(--sheet-shadow);
+      display: grid; grid-template-columns: 150px 1fr; min-height: 340px; font-size: 10px;
+    }
+    .mock-side { border-right: 1px solid hsl(var(--border)); background: hsl(var(--card)); padding: 10px; display: grid; align-content: start; gap: 6px; }
+    .mock-brand { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 11px; padding-bottom: 8px; border-bottom: 1px solid hsl(var(--border)); }
+    .mock-brand i { width: 14px; height: 14px; border-radius: 4px; background: hsl(var(--primary) / 0.2); display: inline-block; }
+    .mock-filter { border: 1px solid hsl(var(--border)); border-radius: 4px; padding: 4px 6px; font: 9px var(--font-mono); color: hsl(var(--muted-foreground)); }
+    .mock-item { display: flex; align-items: center; gap: 6px; padding: 5px; border-radius: 5px; border: 1px solid transparent; }
+    .mock-item.sel { border-color: hsl(var(--amber) / 0.6); background: hsl(var(--amber) / 0.08); }
+    .mock-thumb { width: 22px; height: 22px; border-radius: 3px; background: #fff; display: grid; place-items: center; flex-shrink: 0; }
+    .mock-item b { font: 500 9px var(--font-mono); color: hsl(var(--primary)); display: block; }
+    .mock-item small { font: 8px var(--font-mono); color: hsl(var(--muted-foreground)); }
+    .mock-btn { margin-top: 6px; text-align: center; padding: 6px; border-radius: 4px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-weight: 600; }
+    .mock-main { padding: 10px; display: grid; grid-template-rows: auto 1fr; gap: 8px; min-width: 0; }
+    .mock-bar { display: flex; justify-content: space-between; gap: 8px; font: 9px var(--font-mono); color: hsl(var(--muted-foreground)); }
+    .mock-bar span { border: 1px solid hsl(var(--border)); border-radius: 4px; padding: 2px 6px; background: hsl(var(--card)); }
+    .mock-canvas {
+      border: 1px solid hsl(var(--border)); border-radius: 6px; padding: 14px; display: grid; place-items: center;
+      background-image: radial-gradient(hsl(var(--border)) 1px, transparent 1px); background-size: 14px 14px;
+    }
+    .mock-canvas svg { width: 100%; max-width: 360px; height: auto; background: #fff; border-radius: 3px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); }
+    .ui-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 18px; }
+    .ui-list li { display: grid; grid-template-columns: 36px 1fr; gap: 14px; }
+    .ui-list .ic { width: 36px; height: 36px; border-radius: var(--radius); display: grid; place-items: center; background: hsl(var(--primary) / 0.1); color: hsl(var(--primary)); }
+    .ui-list p { margin: 0; font-size: 14px; color: hsl(var(--muted-foreground)); }
+    kbd { font: 500 11px var(--font-mono); padding: 1px 6px; border-radius: 4px; border: 1px solid hsl(var(--border)); background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+
+    /* features */
+    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .feature { padding: 24px; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) + 4px); background: hsl(var(--card)); }
+    .feature .ic { width: 38px; height: 38px; border-radius: var(--radius); display: grid; place-items: center; margin-bottom: 14px; background: hsl(var(--primary) / 0.1); color: hsl(var(--primary)); }
+    .feature p { margin: 0; font-size: 14px; color: hsl(var(--muted-foreground)); }
+    .feature code { font-size: 12px; padding: 1px 5px; border-radius: 4px; background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+
+    /* get started */
+    .start-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+    .card { border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) + 4px); background: hsl(var(--card)); padding: 22px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+    .card p { margin: 0; font-size: 14px; color: hsl(var(--muted-foreground)); }
+    .code {
+      position: relative; margin: 0; padding: 14px 52px 14px 14px; border-radius: var(--radius);
+      background: hsl(var(--background)); border: 1px solid hsl(var(--border));
+      font-size: 12px; line-height: 1.7; overflow-x: auto;
+    }
+    .codebox { position: relative; min-width: 0; }
+    .codebox .copy { position: absolute; top: 8px; right: 8px; background: hsl(var(--background)); }
+    .code .c { color: hsl(var(--muted-foreground)); }
+    .code .p { color: hsl(var(--primary)); user-select: none; }
+    .req { margin-top: 20px; font-size: 14px; color: hsl(var(--muted-foreground)); }
+    .req code { font-size: 13px; color: hsl(var(--foreground)); }
+
+    /* limits */
+    .limits { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 40px; list-style: none; padding: 0; margin: 0; }
+    .limits li { display: grid; grid-template-columns: 20px 1fr; gap: 12px; padding: 16px 0; border-top: 1px solid hsl(var(--border)); }
+    .limits .icon { color: hsl(var(--amber)); width: 18px; height: 18px; margin-top: 3px; }
+    .limits b { display: block; margin-bottom: 2px; }
+    .limits span { font-size: 14px; color: hsl(var(--muted-foreground)); }
+
+    .cta-band { text-align: center; }
+    .cta-band h2 { margin-bottom: 12px; }
+    .cta-band p { color: hsl(var(--muted-foreground)); margin: 0 auto 28px; max-width: 520px; font-size: 17px; }
+    .cta-band .ctas { justify-content: center; margin: 0; }
+
+    footer { border-top: 1px solid hsl(var(--border)); padding: 28px 0 40px; font-size: 13px; color: hsl(var(--muted-foreground)); }
+    footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+    /* ------------------------------------------------------------ responsive */
+    @media (max-width: 960px) {
+      .hero .wrap, .ui-grid { grid-template-columns: 1fr; gap: 48px; }
+      .steps { grid-template-columns: repeat(2, 1fr); }
+      .features, .start-grid { grid-template-columns: repeat(2, 1fr); }
+      .files { right: 8px; }
+    }
+    @media (max-width: 640px) {
+      .hero { padding-bottom: 48px; }
+      .nav-links { display: none; }
+      .nav .icon-btn { margin-left: auto; }
+      .hero { padding-top: 48px; }
+      section { padding: 64px 0; }
+      .compare, .steps, .features, .start-grid, .limits { grid-template-columns: 1fr; }
+      .files { position: static; width: auto; margin-top: 16px; }
+      .mock { grid-template-columns: 1fr; }
+      .mock-side { display: none; }
+      .snippet { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Lucide icons (ISC), the set the app uses -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3"/><path d="m16 16-1.9-1.9"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></symbol>
+    <symbol id="i-shapes" viewBox="0 0 24 24"><path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z"/><rect x="3" y="14" width="7" height="7" rx="1"/><circle cx="17.5" cy="17.5" r="3.5"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
+    <symbol id="i-files" viewBox="0 0 24 24"><path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></symbol>
+    <symbol id="i-merge" viewBox="0 0 24 24"><path d="m8 6 4-4 4 4"/><path d="M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22"/><path d="m20 22-5-5"/></symbol>
+    <symbol id="i-square-dashed" viewBox="0 0 24 24"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h1"/><path d="M14 3h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/></symbol>
+  </svg>
+
+  <header class="nav">
+    <div class="wrap">
+      <a class="brand" href="#top"><span class="brand-mark"><svg class="icon"><use href="#i-scan"/></svg></span>SVG Extractor</a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#how">How it works</a>
+        <a href="#review">Review UI</a>
+        <a href="#features">Features</a>
+        <a href="#start">Get started</a>
+      </nav>
+      <button class="icon-btn" id="theme" aria-label="Toggle light and dark theme">
+        <svg class="icon sun"><use href="#i-sun"/></svg><svg class="icon moon"><use href="#i-moon"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- ============================================================ hero -->
+    <section class="hero">
+      <div class="wrap">
+        <div>
+          <span class="eyebrow"><b>.ai</b> &amp; <b>PDF</b> → SVG + PNG · runs on your machine</span>
+          <h1>Every icon on the sheet, <em>cropped for you.</em></h1>
+          <p class="lede">SVG Extractor reads Illustrator and PDF mockup artwork, groups the shapes into assets, keeps label text out of the crops, and exports each one as a clean, standalone SVG or PNG. No measuring pixel coordinates by hand.</p>
+          <div class="ctas">
+            <a class="btn btn-primary" href="#start">Get started <svg class="icon"><use href="#i-arrow"/></svg></a>
+            <a class="btn btn-outline" href="#how">How it works</a>
+          </div>
+          <div class="snippet">
+            <span class="prompt">$</span>
+            <code>npm install &amp;&amp; npm run serve</code>
+            <button class="copy" data-copy="npm install && npm run serve" aria-label="Copy command"><svg class="icon idle"><use href="#i-copy"/></svg><svg class="icon done"><use href="#i-check"/></svg></button>
+          </div>
+        </div>
+
+        <div class="stage">
+          <svg class="sheet" viewBox="0 0 560 400" role="img" aria-label="A mockup sheet with six icons. Detection boxes appear around each icon, dashed boxes around each label, and a name tag above each icon taken from its label.">
+            <text class="title" x="32" y="40">Package graphics</text>
+            <line x1="32" y1="52" x2="528" y2="52" stroke="#c9c9ce" stroke-width="1"/>
+
+            <!-- row 1: rings -->
+            <g>
+              <circle cx="110" cy="112" r="30" fill="none" stroke="var(--art-orange)" stroke-width="5"/>
+              <rect x="97" y="99" width="26" height="26" fill="var(--art-gray)"/>
+              <text class="lbl" x="110" y="166">STANDARD</text>
+            </g>
+            <g>
+              <circle cx="280" cy="112" r="30" fill="none" stroke="var(--art-orange)" stroke-width="5"/>
+              <path d="M280 96 L296 124 L264 124 Z" fill="var(--art-gray)"/>
+              <text class="lbl" x="280" y="166">DELUXE</text>
+            </g>
+            <g>
+              <circle cx="450" cy="112" r="30" fill="none" stroke="var(--art-orange)" stroke-width="5"/>
+              <rect x="436" y="107" width="11" height="10" fill="var(--art-gray)"/><rect x="453" y="107" width="11" height="10" fill="var(--art-gray)"/>
+              <text class="lbl" x="450" y="166">DUPLEX</text>
+            </g>
+
+            <!-- row 2: door, gauge, bracket -->
+            <g>
+              <rect x="82" y="218" width="64" height="86" fill="none" stroke="var(--art-gray)" stroke-width="2"/>
+              <rect x="88" y="224" width="24" height="74" fill="var(--art-light)"/><rect x="116" y="224" width="24" height="74" fill="var(--art-light)"/>
+              <rect x="68" y="236" width="8" height="50" fill="var(--art-orange)"/>
+              <text class="lbl" x="107" y="334">COUNTERWEIGHT</text>
+              <text class="lbl" x="107" y="346">LEFT</text>
+            </g>
+            <g>
+              <path d="M246 296 A34 34 0 0 1 314 296 Z" fill="var(--art-orange)"/>
+              <rect x="246" y="296" width="68" height="8" fill="var(--art-gray)"/>
+              <line x1="280" y1="296" x2="300" y2="270" stroke="var(--art-ink)" stroke-width="3" stroke-linecap="round"/>
+              <text class="lbl" x="280" y="334">LOAD GAUGE</text>
+            </g>
+            <g>
+              <path d="M418 230 H482 V300" fill="none" stroke="var(--art-gray)" stroke-width="4"/>
+              <circle cx="482" cy="230" r="5" fill="var(--art-orange)"/>
+              <text class="lbl" x="450" y="334">CORNER</text>
+            </g>
+
+            <!-- detection overlay -->
+            <g>
+              <rect class="det" style="--d:0s" x="74" y="76" width="72" height="72" rx="1"/>
+              <rect class="det" style="--d:.12s" x="244" y="76" width="72" height="72" rx="1"/>
+              <rect class="det" style="--d:.24s" x="414" y="76" width="72" height="72" rx="1"/>
+              <rect class="det" style="--d:.36s" x="64" y="214" width="86" height="94" rx="1"/>
+              <rect class="det" style="--d:.48s" x="242" y="258" width="76" height="50" rx="1"/>
+              <rect class="det" style="--d:.6s" x="412" y="221" width="78" height="83" rx="1"/>
+
+              <rect class="lab" style="--d:.5s" x="80" y="158" width="60" height="11"/>
+              <rect class="lab" style="--d:.55s" x="255" y="158" width="50" height="11"/>
+              <rect class="lab" style="--d:.6s" x="424" y="158" width="52" height="11"/>
+              <rect class="lab" style="--d:.65s" x="66" y="326" width="82" height="23"/>
+              <rect class="lab" style="--d:.7s" x="247" y="326" width="66" height="11"/>
+              <rect class="lab" style="--d:.75s" x="424" y="326" width="52" height="11"/>
+
+              <line class="link" style="--d:.7s" x1="110" y1="148" x2="110" y2="158"/>
+              <line class="link" style="--d:.7s" x1="280" y1="148" x2="280" y2="158"/>
+              <line class="link" style="--d:.7s" x1="450" y1="148" x2="450" y2="158"/>
+              <line class="link" style="--d:.7s" x1="107" y1="308" x2="107" y2="326"/>
+              <line class="link" style="--d:.7s" x1="280" y1="308" x2="280" y2="326"/>
+              <line class="link" style="--d:.7s" x1="451" y1="304" x2="450" y2="326"/>
+
+              <g class="pill" style="--d:.9s"><rect x="74" y="65" width="46" height="11" rx="2"/><text x="78" y="73">standard</text></g>
+              <g class="pill" style="--d:1s"><rect x="244" y="65" width="38" height="11" rx="2"/><text x="248" y="73">deluxe</text></g>
+              <g class="pill" style="--d:1.1s"><rect x="414" y="65" width="38" height="11" rx="2"/><text x="418" y="73">duplex</text></g>
+              <g class="pill" style="--d:1.2s"><rect x="64" y="203" width="84" height="11" rx="2"/><text x="68" y="211">counterweight_left</text></g>
+              <g class="pill" style="--d:1.3s"><rect x="242" y="247" width="54" height="11" rx="2"/><text x="246" y="255">load_gauge</text></g>
+              <g class="pill" style="--d:1.4s"><rect x="412" y="210" width="38" height="11" rx="2"/><text x="416" y="218">corner</text></g>
+            </g>
+          </svg>
+
+          <div class="files" aria-hidden="true">
+            <div class="files-head"><span>icons/</span><span>8 files</span></div>
+            <div class="files-body">
+            <div class="files-wait">detecting assets…</div>
+            <div class="file" style="--d:1.5s"><span class="ext">svg</span>standard.svg<span>72×72</span></div>
+            <div class="file" style="--d:1.6s"><span class="ext">svg</span>deluxe.svg<span>72×72</span></div>
+            <div class="file" style="--d:1.7s"><span class="ext">svg</span>counterweight_left.svg<span>86×94</span></div>
+            <div class="file" style="--d:1.8s"><span class="ext png">png</span>load_gauge@3x.png<span>228×150</span></div>
+            <div class="file" style="--d:1.9s"><span class="ext json">json</span>manifest.json<span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ before / after -->
+    <section class="alt" aria-labelledby="why">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="kicker">Why</p>
+          <h2 id="why">Cropping icons by hand doesn't scale</h2>
+          <p>Pulling assets out of a brochure or configurator mockup used to mean a lot of careful, repetitive work for every file.</p>
+        </div>
+        <div class="compare">
+          <div class="panel before">
+            <h3>By hand</h3>
+            <ul>
+              <li><svg class="icon"><use href="#i-x"/></svg><span>Reading pixel coordinates off a rendered page to find each icon's centre.</span></li>
+              <li><svg class="icon"><use href="#i-x"/></svg><span>Tuning a crop radius per batch so nearby label text doesn't bleed in.</span></li>
+              <li><svg class="icon"><use href="#i-x"/></svg><span>Re-rendering a contact sheet after every attempt to catch bad crops.</span></li>
+              <li><svg class="icon"><use href="#i-x"/></svg><span>Working around <code>.ai</code> files that arrive corrupted after a chat upload.</span></li>
+            </ul>
+          </div>
+          <div class="panel after">
+            <h3>With SVG Extractor</h3>
+            <ul>
+              <li><svg class="icon"><use href="#i-check"/></svg><span><b>Spatial clustering</b> finds each asset. No coordinates to guess.</span></li>
+              <li><svg class="icon"><use href="#i-check"/></svg><span><b>Label detection</b> keeps outlined text out of the crop, and uses live text to name the file.</span></li>
+              <li><svg class="icon"><use href="#i-check"/></svg><span><b>A contact sheet</b> comes with every export, and the review UI shows the real crops as you work.</span></li>
+              <li><svg class="icon"><use href="#i-check"/></svg><span><b>Reads files straight off disk</b>, treating PDF-compatible <code>.ai</code> as PDF.</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ how it works -->
+    <section id="how" aria-labelledby="how-h">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="kicker">How it works</p>
+          <h2 id="how-h">From one sheet to a folder of assets in four steps</h2>
+          <p>One CLI command runs all four. The review UI sits on top and edits the same session file, so you can correct the result before exporting.</p>
+        </div>
+        <div class="steps">
+          <article class="step">
+            <div class="step-art" aria-hidden="true">
+              <svg viewBox="0 0 160 100" fill="none" stroke-width="1.5">
+                <rect class="art-dim" x="12" y="14" width="48" height="72" rx="3"/>
+                <path class="art-dim" d="M20 28h26M20 36h32M20 44h22M20 52h30M20 60h18"/>
+                <path class="art-primary" d="M68 50h18m-6-6 6 6-6 6"/>
+                <circle class="art-ink" cx="112" cy="30" r="10"/>
+                <rect class="art-ink" x="102" y="54" width="20" height="20"/>
+                <path class="art-ink" d="M134 24 l12 20 h-24 z"/>
+                <rect class="art-amber" x="130" y="56" width="18" height="16" stroke-dasharray="2 2"/>
+              </svg>
+            </div>
+            <div class="step-body">
+              <h3>Parse</h3>
+              <p>Walks the PDF operator list with PDF.js, tracking transforms, colours, strokes and clips. Every painted path comes out with an exact bounding box.</p>
+            </div>
+          </article>
+          <article class="step">
+            <div class="step-art" aria-hidden="true">
+              <svg viewBox="0 0 160 100" fill="none" stroke-width="1.5">
+                <rect class="art-dim" x="8" y="8" width="144" height="84" rx="3" stroke-dasharray="3 3"/>
+                <path class="art-dim" d="M20 22h120"/>
+                <circle class="art-primary" cx="44" cy="52" r="13"/>
+                <rect class="art-primary" x="90" y="40" width="24" height="24"/>
+                <path class="art-label" d="M28 78h4m3 0h4m3 0h4m3 0h4"/>
+                <path class="art-label" d="M88 78h4m3 0h4m3 0h4m3 0h4"/>
+                <text class="art-text" x="122" y="18">rule</text>
+                <text class="art-text" x="122" y="82">text</text>
+              </svg>
+            </div>
+            <div class="step-body">
+              <h3>Classify</h3>
+              <p>Sorts elements into backgrounds, dividers, specks, text and geometry. Outlined lettering is spotted as runs of small glyph-like shapes on a shared baseline.</p>
+            </div>
+          </article>
+          <article class="step">
+            <div class="step-art" aria-hidden="true">
+              <svg viewBox="0 0 160 100" fill="none" stroke-width="1.5">
+                <circle class="art-ink" cx="40" cy="44" r="14"/>
+                <rect class="art-ink" x="33" y="37" width="14" height="14"/>
+                <rect class="art-ink" x="96" y="30" width="16" height="30"/>
+                <rect class="art-ink" x="116" y="30" width="16" height="30"/>
+                <rect class="art-primary" x="22" y="26" width="36" height="36" rx="2"/>
+                <rect class="art-primary" x="90" y="24" width="48" height="42" rx="2"/>
+                <path class="art-label" d="M28 80h24M98 80h32" stroke-dasharray="2 2"/>
+                <path class="art-amber" d="M132 45h-12" stroke-dasharray="1 2"/>
+                <text class="art-text strong" x="152" y="16" text-anchor="end">gap ≤ 10pt</text>
+              </svg>
+            </div>
+            <div class="step-body">
+              <h3>Cluster</h3>
+              <p>Groups geometry that sits within a gap of each other, orders assets in reading order, and pairs each with the nearest label below or above it.</p>
+            </div>
+          </article>
+          <article class="step">
+            <div class="step-art" aria-hidden="true">
+              <svg viewBox="0 0 160 100" fill="none" stroke-width="1.5">
+                <rect class="art-primary" x="14" y="16" width="38" height="46" rx="3"/>
+                <text class="art-text strong" x="22" y="44">SVG</text>
+                <rect class="art-accent" x="60" y="16" width="38" height="46" rx="3"/>
+                <text class="art-text strong" x="68" y="44">PNG</text>
+                <rect class="art-amber" x="106" y="16" width="38" height="46" rx="3"/>
+                <text class="art-text strong" x="111" y="44">JSON</text>
+                <rect class="art-dim" x="14" y="70" width="130" height="18" rx="3"/>
+                <path class="art-dim" d="M22 79h10M38 79h10M54 79h10M70 79h10M86 79h10M102 79h10M118 79h10"/>
+              </svg>
+            </div>
+            <div class="step-body">
+              <h3>Export</h3>
+              <p>Writes each asset's paths verbatim into a tight viewBox, so strokes scale exactly. PNGs are rasterised from that same SVG. You also get a manifest and a contact sheet.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ review UI -->
+    <section id="review" class="alt" aria-labelledby="review-h">
+      <div class="wrap ui-grid">
+        <div class="mock" aria-hidden="true">
+          <div class="mock-side">
+            <div class="mock-brand"><i></i>SVG Extractor</div>
+            <div class="mock-filter">Filter by name…</div>
+            <div class="mock-item"><span class="mock-thumb"><svg viewBox="0 0 20 20" width="16"><circle cx="10" cy="10" r="7" fill="none" stroke="#f26b21" stroke-width="2"/><rect x="7" y="7" width="6" height="6" fill="#6e6e73"/></svg></span><span><b>standard</b><small>72×72pt</small></span></div>
+            <div class="mock-item sel"><span class="mock-thumb"><svg viewBox="0 0 20 20" width="16"><circle cx="10" cy="10" r="7" fill="none" stroke="#f26b21" stroke-width="2"/><path d="M10 6l4 7H6z" fill="#6e6e73"/></svg></span><span><b>deluxe</b><small>72×72pt</small></span></div>
+            <div class="mock-item"><span class="mock-thumb"><svg viewBox="0 0 20 20" width="16"><circle cx="10" cy="10" r="7" fill="none" stroke="#f26b21" stroke-width="2"/><rect x="6" y="9" width="3" height="3" fill="#6e6e73"/><rect x="11" y="9" width="3" height="3" fill="#6e6e73"/></svg></span><span><b>duplex</b><small>72×72pt</small></span></div>
+            <div class="mock-item"><span class="mock-thumb"><svg viewBox="0 0 20 20" width="16"><rect x="6" y="3" width="10" height="14" fill="none" stroke="#6e6e73" stroke-width="1.2"/><rect x="3" y="6" width="2" height="8" fill="#f26b21"/></svg></span><span><b>counterweight_left</b><small>86×94pt</small></span></div>
+            <div class="mock-btn">Export assets</div>
+          </div>
+          <div class="mock-main">
+            <div class="mock-bar"><span>6 assets · 6 labels</span><span>↶ ↷</span><span>− 126% +</span></div>
+            <div class="mock-canvas">
+              <svg viewBox="0 0 300 150">
+                <circle cx="60" cy="55" r="24" fill="none" stroke="#f26b21" stroke-width="4"/><rect x="50" y="45" width="20" height="20" fill="#6e6e73"/>
+                <circle cx="150" cy="55" r="24" fill="none" stroke="#f26b21" stroke-width="4"/><path d="M150 42l13 23h-26z" fill="#6e6e73"/>
+                <circle cx="240" cy="55" r="24" fill="none" stroke="#f26b21" stroke-width="4"/><rect x="229" y="51" width="9" height="8" fill="#6e6e73"/><rect x="242" y="51" width="9" height="8" fill="#6e6e73"/>
+                <g font-family="Space Grotesk, sans-serif" font-size="7" font-weight="600" letter-spacing=".08em" fill="#2b2b30" text-anchor="middle"><text x="60" y="100">STANDARD</text><text x="150" y="100">DELUXE</text><text x="240" y="100">DUPLEX</text></g>
+                <rect x="31" y="26" width="58" height="58" fill="none" stroke="hsl(160 84% 36%)" stroke-width="1.2"/>
+                <rect x="121" y="26" width="58" height="58" fill="hsl(45 93% 58% / .12)" stroke="hsl(45 93% 50%)" stroke-width="2"/>
+                <rect x="211" y="26" width="58" height="58" fill="none" stroke="hsl(270 60% 60%)" stroke-width="1.2" stroke-dasharray="4 2"/>
+                <g fill="hsl(45 93% 50%)"><rect x="118" y="23" width="6" height="6"/><rect x="176" y="23" width="6" height="6"/><rect x="118" y="81" width="6" height="6"/><rect x="176" y="81" width="6" height="6"/></g>
+                <g fill="none" stroke="hsl(210 70% 50%)" stroke-dasharray="2 2" stroke-width=".8"><rect x="36" y="93" width="48" height="9"/><rect x="132" y="93" width="36" height="9"/><rect x="222" y="93" width="36" height="9"/></g>
+                <text x="16" y="135" font-family="JetBrains Mono, monospace" font-size="7" fill="#888">drag to draw · shift-click to multi-select</text>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <div>
+          <p class="kicker">Review UI</p>
+          <h2 id="review-h">Check and fix the crops before you export</h2>
+          <p class="muted" style="margin:0 0 28px">Detection is a heuristic, so the browser UI makes fixing it fast. The page is drawn by PDF.js, so what you see is exactly what's in the file.</p>
+          <ul class="ui-list">
+            <li><span class="ic"><svg class="icon"><use href="#i-merge"/></svg></span><div><h3>Merge, split, exclude</h3><p>Shift-click boxes and press <kbd>M</kbd>, <kbd>S</kbd> or <kbd>X</kbd>. A split re-clusters the box at half the gap.</p></div></li>
+            <li><span class="ic"><svg class="icon"><use href="#i-square-dashed"/></svg></span><div><h3>Draw or resize a box</h3><p>Drag on the page to take whatever is mostly inside the box, or drag a corner to adjust a detected one.</p></div></li>
+            <li><span class="ic"><svg class="icon"><use href="#i-undo"/></svg></span><div><h3>Undo anything</h3><p><kbd>⌘</kbd><kbd>Z</kbd> reverts the last edit, including a batch delete. Every change saves to the session file as you go.</p></div></li>
+            <li><span class="ic"><svg class="icon"><use href="#i-copy"/></svg></span><div><h3>Copy or download one asset</h3><p>Each thumbnail is the real exported SVG. Copy its markup straight into code or a design tool, or download a single SVG or PNG.</p></div></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ features -->
+    <section id="features" aria-labelledby="features-h">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="kicker">Features</p>
+          <h2 id="features-h">Built for real mockup sheets</h2>
+        </div>
+        <div class="features">
+          <div class="feature"><div class="ic"><svg class="icon"><use href="#i-shapes"/></svg></div><h3>Exact geometry</h3><p>Paths, transforms and clip paths are copied verbatim from the source, not traced or redrawn, so stroke widths and curves match the original.</p></div>
+          <div class="feature"><div class="ic"><svg class="icon"><use href="#i-tag"/></svg></div><h3>Label-aware</h3><p>Outlined captions are kept out of the crop. Live text becomes the file name, so <em>STANDARD</em> exports as <code>standard.svg</code>.</p></div>
+          <div class="feature"><div class="ic"><svg class="icon"><use href="#i-files"/></svg></div><h3>Everything you need, in one export</h3><p>SVGs, PNGs at any scale, a <code>manifest.json</code> listing each asset's size and colours, and a <code>_contact-sheet.png</code>. Download it as one <code>.zip</code>.</p></div>
+          <div class="feature"><div class="ic"><svg class="icon"><use href="#i-terminal"/></svg></div><h3>CLI for batch runs</h3><p><code>detect</code>, <code>export</code>, <code>inspect</code> and <code>serve</code>. The CLI and the UI share one session file, so corrections made in the browser carry into scripted exports.</p></div>
+          <div class="feature"><div class="ic"><svg class="icon"><use href="#i-sliders"/></svg></div><h3>Tunable</h3><p>Every threshold (gap, padding, glyph size, background area) can be set per run with <code>--gap</code> or <code>--set key=value</code>, or per page in the UI.</p></div>
+          <div class="feature"><div class="ic"><svg class="icon"><use href="#i-lock"/></svg></div><h3>Stays on your machine</h3><p>No uploads to a service. The server listens on 127.0.0.1 only and refuses requests from other websites, so client artwork never leaves your computer.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ get started -->
+    <section id="start" class="alt" aria-labelledby="start-h">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="kicker">Get started</p>
+          <h2 id="start-h">Up and running in a minute</h2>
+          <p>Clone the repository, install, and open the review UI. Drop in an <code>.ai</code> or PDF and you'll see the detected assets right away.</p>
+        </div>
+        <div class="start-grid">
+          <div class="card">
+            <h3>1 · Install</h3>
+            <p>Pure JavaScript apart from one prebuilt binary, so there's nothing to compile.</p>
+<div class="codebox"><pre class="code"><span class="p">$ </span>git clone \
+    https://github.com/cabanas-engg/svg-extractor
+<span class="p">$ </span>cd svg-extractor
+<span class="p">$ </span>npm install</pre><button class="copy" data-copy="git clone https://github.com/cabanas-engg/svg-extractor&#10;cd svg-extractor&#10;npm install" aria-label="Copy install commands"><svg class="icon idle"><use href="#i-copy"/></svg><svg class="icon done"><use href="#i-check"/></svg></button></div>
+          </div>
+          <div class="card">
+            <h3>2 · Open the UI</h3>
+            <p>Starts the local server and opens your browser. Drag a file onto the page.</p>
+<div class="codebox"><pre class="code"><span class="p">$ </span>npm run serve
+<span class="c"># → http://127.0.0.1:5178</span></pre><button class="copy" data-copy="npm run serve" aria-label="Copy serve command"><svg class="icon idle"><use href="#i-copy"/></svg><svg class="icon done"><use href="#i-check"/></svg></button></div>
+          </div>
+          <div class="card">
+            <h3>3 · Or script it</h3>
+            <p>Detect and export in one go: SVG and PNG at 4×, plus the manifest and contact sheet.</p>
+<div class="codebox"><pre class="code"><span class="p">$ </span>node bin/svg-extractor.js \
+    export sheet.ai -o icons/ \
+    --format svg,png \
+    --scale 4</pre><button class="copy" data-copy="node bin/svg-extractor.js export sheet.ai -o icons/ --format svg,png --scale 4" aria-label="Copy export command"><svg class="icon idle"><use href="#i-copy"/></svg><svg class="icon done"><use href="#i-check"/></svg></button></div>
+          </div>
+        </div>
+        <p class="req">Needs <b>Node 20+</b>. <code>.ai</code> files must be saved with <b>Create PDF Compatible File</b>, which is Illustrator's default.</p>
+      </div>
+    </section>
+
+    <!-- ============================================================ limits -->
+    <section aria-labelledby="limits-h">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="kicker">Honest limits</p>
+          <h2 id="limits-h">What it doesn't do (yet)</h2>
+          <p>Working well on outlined, flattened artwork isn't the same as solving every file. These are the known gaps.</p>
+        </div>
+        <ul class="limits">
+          <li><svg class="icon"><use href="#i-alert"/></svg><div><b>Telling text from icons is a heuristic</b><span>A tight row of three or more small, varied shapes can read as a word. Very large display type reads as geometry.</span></div></li>
+          <li><svg class="icon"><use href="#i-alert"/></svg><div><b>Outlined labels can't name files</b><span>Outlined text has no string to read, so those assets get grid names like <code class="mono">p1_r2_c3</code>. OCR isn't built yet.</span></div></li>
+          <li><svg class="icon"><use href="#i-alert"/></svg><div><b>Dense layouts need a hand</b><span>Icons that touch each other or their labels can merge into one box. Split, draw and resize in the UI fix it.</span></div></li>
+          <li><svg class="icon"><use href="#i-alert"/></svg><div><b>Some effects are approximated</b><span>Gradients become a solid colour, smooth shadings, blend modes and soft masks are skipped. Every case is flagged as a warning, never silently.</span></div></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="cta-band alt">
+      <div class="wrap">
+        <h2>Stop measuring crops by hand</h2>
+        <p>Point it at your next mockup sheet and review the result in the browser.</p>
+        <div class="ctas">
+          <a class="btn btn-primary" href="#start">Get started <svg class="icon"><use href="#i-arrow"/></svg></a>
+          <a class="btn btn-outline" href="https://github.com/cabanas-engg/svg-extractor"><svg class="icon"><use href="#i-github"/></svg> View the repository</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>SVG Extractor · a local tool for pulling assets out of mockup sheets</span>
+      <span>Built with PDF.js and resvg · icons by Lucide</span>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('theme').addEventListener('click', () => {
+      const dark = document.documentElement.classList.toggle('dark');
+      try { localStorage.setItem('svgx-theme', dark ? 'dark' : 'light'); } catch {}
+    });
+    for (const btn of document.querySelectorAll('[data-copy]')) {
+      btn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(btn.dataset.copy);
+          btn.classList.add('copied');
+          setTimeout(() => btn.classList.remove('copied'), 1500);
+        } catch {}
+      });
+    }
+  </script>
+</body>
+</html>

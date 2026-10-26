@@ -10,7 +10,8 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "fixture": "node tools/make-fixture.mjs",
-    "start": "node bin/svg-extractor.js"
+    "start": "node bin/svg-extractor.js",
+    "serve": "node bin/svg-extractor.js serve --open"
   },
   "engines": {
     "node": ">=20"

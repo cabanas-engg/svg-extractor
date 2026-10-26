@@ -21,7 +21,8 @@ Node 20+. No native dependencies beyond the prebuilt `@resvg/resvg-js` binary.
 The easiest way is the browser UI. Start it without a file and upload one:
 
 ```sh
-node bin/svg-extractor.js serve                 # then open http://127.0.0.1:5178
+npm run serve                                   # starts the UI and opens your browser
+node bin/svg-extractor.js serve                 # same, without opening it: http://127.0.0.1:5178
 ```
 
 Drag an `.ai` or PDF onto the page, or click **Choose file**. Uploads are saved
@@ -72,7 +73,9 @@ Styled after [schemabuddy.dev](https://www.schemabuddy.dev/): dark by default, w
 - Click a box to select it (Shift-click for several).
 - **M** merges, **S** splits (re-clusters at half the gap), **X** excludes, **Del** deletes.
 - Drag on an empty part of the page to draw a box by hand, or drag a selected box's corners to resize it.
-- Rename an asset in the sidebar. The thumbnails are the actual exported SVGs.
+- Rename an asset in the sidebar. The thumbnails are the actual exported SVGs; **Copy** puts an asset's SVG markup on the clipboard.
+- **/** filters the list by name or label text. **⌘/Ctrl + scroll** (or pinch) zooms around the pointer; **+ − 0** zoom in, out and to fit.
+- **?** lists every shortcut.
 - **Ctrl/⌘ Z** undoes the last edit, **Ctrl/⌘ Shift Z** (or Ctrl Y) redoes it. Undo history lasts until you open another file or restart the server.
 - **E** opens the export dialog (download a .zip, or save to a folder). **O** opens a file.
 - The sidebar's *All pages* tab lists every page's assets.
@@ -85,5 +88,8 @@ npm run fixture     # regenerate the synthetic fixture
 ```
 
 CI runs `npm test` on Node 20, 22 and 24 for every push (`.github/workflows/test.yml`).
+
+The landing page is a single static file, `docs/index.html` (no build step). To
+publish it, turn on GitHub Pages for the `master` branch's `/docs` folder.
 
 See `CLAUDE.md` for the design, known limitations and open questions.

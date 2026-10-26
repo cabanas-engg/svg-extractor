@@ -48,6 +48,7 @@ tools/make-fixture.mjs generates test/fixtures/mockup.{pdf,ai}
 tools/eval-reference.mjs scores detection against hand-made reference crops
 tools/outline.mjs      outlined-text helper for test sheets (don't use pdfkit's doc.path(svg) — it truncates glyphs)
 test/                  node:test regression tests (synthetic fixture + real references when present)
+docs/                  landing page: one static index.html (inline CSS/SVG, same tokens as ui/); GitHub Pages-ready, not published
 ```
 
 Commands: `npm test`, `npm run fixture`, `node bin/svg-extractor.js --help`.
@@ -104,7 +105,13 @@ runs once the event loop is idle, so a listening server deadlocks the run.
    to select, Merge (M), Split (S: re-cluster at half the gap), Exclude (X),
    Delete, drag on empty page to draw a manual box, drag corners to resize (a
    resized box becomes manual: "whatever is mostly inside it"). Rename inline;
-   thumbnails are the real exported SVGs. Tuning popover re-detects the page with
+   thumbnails are the real exported SVGs, requested with a content key
+   (`thumbKey`: doc id + bbox + elements + kind + pad) that the server marks
+   cacheable, so an edit only reloads the thumbnails it changed. The canvas
+   renders off-screen and swaps in; boxes and the list never wait for it
+   (PDF.js paints in animation frames, which background tabs don't get).
+   Filter (/), Copy SVG, ⌘/Ctrl-scroll zoom around the pointer, `?` for
+   shortcuts. Tuning popover re-detects the page with
    new thresholds (manual boxes survive). All edits save to the session file,
    which `export` then uses.
 8. **Opening files from the browser** — `serve` without a file starts on an
@@ -225,6 +232,9 @@ Nothing in `app.css` hard-codes a colour; everything goes through tokens.
 - Review UI restyled to match schemabuddy.dev (dark default + light toggle).
 - Browser upload (drop/pick), workspace with recent files, .zip download.
 - Undo/redo, request-origin checks, input validation, CI.
+- UI polish: list filter, copy SVG, pointer-anchored zoom, shortcut sheet,
+  cached thumbnails, no canvas flicker. `serve --open`. Landing page in `docs/`
+  (client-free illustrations: no LiftCom/AES artwork or names).
 - Next: run against a real AES mockup source file (`.ai`/PDF, into
   `test/fixtures/real/`) to check real spacing and labels; OCR naming for
   outlined labels.

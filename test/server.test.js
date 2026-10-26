@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { execFileSync } from 'node:child_process';
-import { createApp } from '../src/server.js';
+import { createApp, startServer } from '../src/server.js';
 
 const FIXTURE = new URL('./fixtures/mockup.ai', import.meta.url).pathname;
 let server, base, workspace;
@@ -147,4 +147,17 @@ test('an unreadable upload is not left in the workspace', async () => {
   assert.equal(res.status, 422);
   assert.equal(fs.existsSync(path.join(workspace, 'broken.pdf')), false);
   assert.ok(!(await state()).recent.some((r) => r.name === 'broken.pdf'));
+});
+
+test('keyed thumbnail URLs are cacheable, plain ones are not', async () => {
+  const s = await state();
+  assert.ok(s.docId, 'state carries a document id for cache keys');
+  const id = s.assets[0].id;
+  assert.match((await fetch(`${base}/api/assets/${id}.svg?k=abc`)).headers.get('cache-control'), /immutable/);
+  assert.equal((await fetch(`${base}/api/assets/${id}.svg`)).headers.get('cache-control'), 'no-store');
+});
+
+test('a busy port gives a clear error', async () => {
+  const port = server.address().port;
+  await assert.rejects(startServer({ workspace, port }), /port \d+ is already in use.*--port/);
 });

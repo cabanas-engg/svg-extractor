@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+import { spawn } from 'node:child_process';
 import { parseFile } from '../src/parse.js';
 import { DEFAULTS, classify } from '../src/detect.js';
 import { createSession, loadSession, saveSession, defaultSessionPath } from '../src/session.js';
@@ -26,6 +27,7 @@ Common options:
 Serve options:
   --port <n>         port for the UI (default: 5178)
   --workspace <dir>  where browser uploads are stored (default: ./workspace)
+  --open             open the UI in your default browser
 
 Export options:
   -o, --out <dir>    output directory (default: ./<file-name>-assets)
@@ -39,6 +41,12 @@ Tuning (see DEFAULTS in src/detect.js; all in pt unless noted):
   --max-glyph-height   tallest shape treated as an outlined glyph  (${DEFAULTS.maxGlyphHeight})
   --set key=value      any other DEFAULTS key, repeatable
 `;
+
+function openBrowser(url) {
+  const [cmd, args] =
+    process.platform === 'darwin' ? ['open', [url]] : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : ['xdg-open', [url]];
+  spawn(cmd, args, { stdio: 'ignore', detached: true }).on('error', () => console.warn(`could not open a browser; go to ${url}`)).unref();
+}
 
 function parsePages(s) {
   if (!s) return undefined;
@@ -84,6 +92,7 @@ async function main() {
       'no-contact-sheet': { type: 'boolean' },
       redetect: { type: 'boolean' },
       port: { type: 'string', default: '5178' },
+      open: { type: 'boolean' },
       workspace: { type: 'string', default: 'workspace' },
       gap: { type: 'string' },
       pad: { type: 'string' },
@@ -100,7 +109,9 @@ async function main() {
   const workspace = path.resolve(v.workspace);
   if (cmd === 'serve' && !file) {
     const { startServer } = await import('../src/server.js');
-    await startServer({ workspace, port: number('--port', v.port) });
+    const port = number('--port', v.port);
+    await startServer({ workspace, port });
+    if (v.open) openBrowser(`http://127.0.0.1:${port}`);
     return;
   }
   if (!fs.existsSync(file)) throw new Error(`no such file: ${file}`);
@@ -175,6 +186,7 @@ async function main() {
       const pagesMap = new Map(parsed.pages.map((p) => [p.page, p]));
       const doc = { file, parsed, session, sessionPath, exportDir: exportDirFor(file), pages: pagesMap };
       await startServer({ doc, workspace, port });
+      if (v.open) openBrowser(`http://127.0.0.1:${port}`);
       break;
     }
     default:

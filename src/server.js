@@ -186,6 +186,8 @@ export function createApp({ workspace, doc: initial = null }) {
       ...base,
       empty: false,
       file: path.basename(doc.file),
+      // changes whenever a document is (re)opened; part of thumbnail cache keys
+      docId: (doc.id ||= crypto.randomUUID()),
       sessionPath: doc.sessionPath,
       exportDir: doc.exportDir,
       options: session.options,
@@ -316,6 +318,9 @@ export function createApp({ workspace, doc: initial = null }) {
         const a = findAsset(decodeURIComponent(r[1]));
         const svg = renderAssetSVG(pageOf(a.page), a, { pad: doc.session.options.pad });
         const headers = url.searchParams.has('download') ? { 'content-disposition': attachment(`${a.name}.${r[2]}`) } : {};
+        // ?k= is a content key from the UI (see thumbKey in app.js), so a keyed
+        // URL never changes meaning and the browser may keep it.
+        if (url.searchParams.has('k')) headers['cache-control'] = 'private, max-age=86400, immutable';
         if (r[2] === 'svg') return send(res, 200, svg, 'image/svg+xml', headers);
         const scale = parseScale(url.searchParams.get('scale'));
         return send(res, 200, svgToPNG(svg, { scale }), 'image/png', headers);
@@ -422,5 +427,8 @@ export function startServer({ doc = null, workspace, port = 5178, host = '127.0.
       console.log(`review UI: http://${host}:${port}  (${what}; uploads go to ${workspace}; Ctrl+C to stop)`);
       resolve(server);
     });
+  }).catch((e) => {
+    if (e.code === 'EADDRINUSE') throw new Error(`port ${port} is already in use (another svg-extractor running?). Try --port ${port + 1}`);
+    throw e;
   });
 }

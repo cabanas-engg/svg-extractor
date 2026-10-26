@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SVG Extractor</title>
+  <link rel="icon" href="/ui/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="/ui/tokens.css">
@@ -30,6 +31,12 @@
         <button class="tab" data-scope="all" role="tab"><i data-icon="layers"></i> All pages</button>
         <span class="tab-count" id="count"></span>
       </div>
+
+      <label class="filter" id="filterBox">
+        <i data-icon="search"></i>
+        <input type="search" id="filter" placeholder="Filter by name or label" spellcheck="false" autocomplete="off" aria-label="Filter assets">
+        <kbd>/</kbd>
+      </label>
 
       <ul id="list" class="list"></ul>
 
@@ -63,6 +70,7 @@
           </div>
         </div>
         <input type="file" id="fileInput" accept=".ai,.pdf,application/pdf,application/illustrator" hidden>
+        <button class="theme-toggle" id="helpBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><i data-icon="keyboard"></i></button>
         <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme"></button>
       </header>
 
@@ -156,6 +164,32 @@
         <button type="submit" class="btn btn-primary"><i data-icon="file-archive"></i> Download .zip</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="helpDialog" class="dialog">
+    <div class="dialog-body">
+      <div class="dialog-head">
+        <h2>Keyboard shortcuts</h2>
+        <button type="button" class="icon-btn" id="helpClose" aria-label="Close"><i data-icon="x"></i></button>
+      </div>
+      <dl class="shortcuts">
+        <dt>Click · Shift-click</dt><dd>Select · add to selection</dd>
+        <dt>Drag on the page</dt><dd>Draw a box by hand</dd>
+        <dt><kbd>M</kbd></dt><dd>Merge selected</dd>
+        <dt><kbd>S</kbd></dt><dd>Split selected</dd>
+        <dt><kbd>X</kbd></dt><dd>Exclude / include selected</dd>
+        <dt><kbd>Del</kbd></dt><dd>Delete selected</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Clear selection, close menus</dd>
+        <dt><kbd>⌘/Ctrl</kbd> <kbd>Z</kbd></dt><dd>Undo</dd>
+        <dt><kbd>⌘/Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></dt><dd>Redo</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next page</dd>
+        <dt><kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd></dt><dd>Zoom in / out / fit</dd>
+        <dt><kbd>⌘/Ctrl</kbd> + scroll</dt><dd>Zoom around the pointer (or pinch)</dd>
+        <dt><kbd>/</kbd></dt><dd>Filter the asset list</dd>
+        <dt><kbd>E</kbd> · <kbd>O</kbd></dt><dd>Export · open a file</dd>
+        <dt><kbd>?</kbd></dt><dd>This list</dd>
+      </dl>
+    </div>
   </dialog>
 
   <div class="drop-overlay" id="dropOverlay" hidden>
