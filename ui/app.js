@@ -242,6 +242,8 @@ function renderButtons() {
   $('#splitBtn').disabled = n !== 1;
   $('#excludeBtn').disabled = n === 0;
   $('#deleteBtn').disabled = n === 0;
+  $('#undoBtn').disabled = !ui.data.canUndo;
+  $('#redoBtn').disabled = !ui.data.canRedo;
   $('#prev').disabled = ui.pageNum <= ui.data.pages[0].page;
   $('#next').disabled = ui.pageNum >= ui.data.pages.at(-1).page;
 }
@@ -278,7 +280,7 @@ $('#overlay').addEventListener('pointerdown', (e) => {
   e.currentTarget.setPointerCapture(e.pointerId);
   if (t.classList.contains('handle')) {
     const a = ui.data.assets.find((q) => q.id === t.dataset.id);
-    drag = { mode: 'resize', id: a.id, corner: t.dataset.corner, box: [...a.bbox] };
+    drag = { mode: 'resize', id: a.id, corner: t.dataset.corner, box: [...a.bbox], start: [...a.bbox] };
   } else if (t.classList.contains('box')) {
     select(t.dataset.id, e.shiftKey || e.metaKey || e.ctrlKey);
     drag = null;
@@ -299,7 +301,9 @@ $('#overlay').addEventListener('pointermove', (e) => {
     if (drag.corner.includes('l')) b[0] = x; else b[2] = x;
     if (drag.corner.includes('t')) b[1] = y; else b[3] = y;
     const a = ui.data.assets.find((q) => q.id === drag.id);
-    a.bbox = norm(b);
+    const n = norm(b);
+    // never collapse a box to nothing (the server rejects zero-size boxes)
+    if (n[2] - n[0] >= 1 && n[3] - n[1] >= 1) a.bbox = n;
     drawOverlay();
   }
 });
@@ -323,6 +327,9 @@ $('#overlay').addEventListener('pointerup', async () => {
     toast(`Added box with ${count} element${count === 1 ? '' : 's'}`);
   } else if (d.mode === 'resize') {
     const a = ui.data.assets.find((q) => q.id === d.id);
+    // A click on a handle without dragging must not turn an auto box into a
+    // hand-drawn one.
+    if (a.bbox.every((v, i) => Math.abs(v - d.start[i]) < 0.01)) return;
     await mutate('PATCH', `/api/assets/${encodeURIComponent(d.id)}`, { bbox: a.bbox });
   }
 });
@@ -345,22 +352,30 @@ async function splitSelected() {
     toast(`Split into ${r.parts.length}`);
   }
 }
+// One request per action, so one undo step reverses it.
 async function excludeSelected() {
-  for (const id of ui.selected) {
-    const a = ui.data.assets.find((q) => q.id === id);
-    await mutate('PATCH', `/api/assets/${encodeURIComponent(id)}`, { exclude: !a.exclude });
-  }
+  if (!ui.selected.size) return;
+  const sel = ui.data.assets.filter((a) => ui.selected.has(a.id));
+  // mixed selection: exclude all; all excluded already: include them again
+  await mutate('POST', '/api/exclude', { ids: sel.map((a) => a.id), exclude: !sel.every((a) => a.exclude) });
 }
 async function deleteSelected() {
-  for (const id of [...ui.selected]) await mutate('DELETE', `/api/assets/${encodeURIComponent(id)}`);
-  ui.selected.clear();
-  renderAll();
+  if (!ui.selected.size) return;
+  const n = ui.selected.size;
+  if (await mutate('POST', '/api/delete', { ids: [...ui.selected] })) toast(`Deleted ${n} asset${n === 1 ? '' : 's'} · Ctrl/⌘ Z to undo`);
+}
+async function undo(dir = 'undo') {
+  if (!ui.data.canUndo && dir === 'undo') return;
+  if (!ui.data.canRedo && dir === 'redo') return;
+  await mutate('POST', `/api/${dir}`);
 }
 
 $('#mergeBtn').onclick = mergeSelected;
 $('#splitBtn').onclick = splitSelected;
 $('#excludeBtn').onclick = excludeSelected;
 $('#deleteBtn').onclick = deleteSelected;
+$('#undoBtn').onclick = () => undo('undo');
+$('#redoBtn').onclick = () => undo('redo');
 
 async function goPage(n) {
   ui.pageNum = n;
@@ -450,7 +465,18 @@ $('#exportCancel').onclick = () => exportDialog.close();
 
 document.addEventListener('keydown', (e) => {
   if (e.target.closest('input, textarea') || exportDialog.open) return;
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && ui.data?.empty === false && (e.key === 'z' || e.key === 'Z' || (e.key === 'y' && e.ctrlKey))) {
+    e.preventDefault();
+    return undo(e.shiftKey || e.key === 'y' ? 'redo' : 'undo');
+  }
+  if (mod || e.altKey) return;
+  if (e.key === 'Escape' && (!tune.hidden || !$('#openMenu').hidden)) {
+    tune.hidden = true;
+    $('#tuneBtn').classList.remove('open');
+    $('#openMenu').hidden = true;
+    return;
+  }
   if (e.key === 'o' || e.key === 'O') return $('#fileInput').click();
   if (ui.data?.empty !== false) return;
   if (e.key === 'e' || e.key === 'E') openExport();
@@ -667,7 +693,7 @@ function showStart() {
   $('#list').replaceChildren(Object.assign(document.createElement('li'), { className: 'empty', textContent: 'No file open yet. Upload an .ai or PDF to start.' }));
   $('#count').textContent = '';
   $('#stats').replaceChildren();
-  for (const id of ['#mergeBtn', '#splitBtn', '#excludeBtn', '#deleteBtn']) $(id).disabled = true;
+  for (const id of ['#mergeBtn', '#splitBtn', '#excludeBtn', '#deleteBtn', '#undoBtn', '#redoBtn']) $(id).disabled = true;
   renderRecent();
 }
 

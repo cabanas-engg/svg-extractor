@@ -31,7 +31,7 @@ export function createSession(parsed, opts = {}) {
   for (const page of parsed.pages) {
     const { assets, labels } = detectPage(page, options);
     session.pages.push({ page: page.page, width: page.width, height: page.height });
-    for (const a of assets) session.assets.push({ ...a, name: a.suggestedName, exclude: false });
+    for (const a of assets) session.assets.push({ ...a, name: uniqueName(session, a.suggestedName), exclude: false });
     session.labels.push(...labels.map((l) => ({ ...l, page: page.page })));
   }
   return session;
@@ -180,7 +180,7 @@ export function deleteAsset(session, id) {
 export function redetectPage(session, page, opts) {
   Object.assign(session.options, opts);
   const { assets, labels } = detectPage(page, session.options);
-  const keep = session.assets.filter((a) => a.page !== page.page || a.kind === 'manual');
-  session.assets = keep.concat(assets.map((a) => ({ ...a, name: uniqueName({ assets: keep }, a.suggestedName), exclude: false })));
+  session.assets = session.assets.filter((a) => a.page !== page.page || a.kind === 'manual');
+  for (const a of assets) session.assets.push({ ...a, name: uniqueName(session, a.suggestedName), exclude: false });
   session.labels = session.labels.filter((l) => l.page !== page.page).concat(labels.map((l) => ({ ...l, page: page.page })));
 }

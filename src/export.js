@@ -42,8 +42,9 @@ export function buildExport(parsed, session, opts = {}) {
       written.push({ id: asset.id, name: asset.name, skipped: 'no elements inside box' });
       continue;
     }
-    let name = asset.name || asset.suggestedName || asset.id;
-    for (let i = 2; used.has(name); i++) name = `${asset.name}_${i}`;
+    const base = asset.name || asset.suggestedName || asset.id;
+    let name = base;
+    for (let i = 2; used.has(name); i++) name = `${base}_${i}`;
     used.add(name);
 
     const box = cropBox(asset, pad);
@@ -84,7 +85,7 @@ export function buildExport(parsed, session, opts = {}) {
 
   if (contactSheet) {
     const sheet = buildContactSheet(written.filter((w) => w.svg));
-    files.push({ name: '_contact-sheet.png', data: svgToPNG(sheet, { scale: 1.5, background: '#ffffff' }) });
+    files.push({ name: '_contact-sheet.png', data: svgToPNG(sheet, { scale: 1.5, background: '#ffffff', systemFonts: false }) });
   }
   return { files, manifest };
 }

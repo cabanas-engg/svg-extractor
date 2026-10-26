@@ -21,6 +21,7 @@ Common options:
   --session <path>   session file (default: <file>.extract.json)
   --pages <list>     e.g. 1,3-5 (default: all)
   --redetect         ignore an existing session and detect from scratch
+                     (detect refuses to overwrite a session without it)
 
 Serve options:
   --port <n>         port for the UI (default: 5178)
@@ -43,21 +44,30 @@ function parsePages(s) {
   if (!s) return undefined;
   const out = [];
   for (const part of s.split(',')) {
-    const [a, b] = part.split('-').map(Number);
-    for (let i = a; i <= (b || a); i++) out.push(i);
+    const m = part.trim().match(/^(\d+)(?:-(\d+))?$/);
+    if (!m || Number(m[1]) < 1 || (m[2] && Number(m[2]) < Number(m[1]))) throw new Error(`bad --pages entry "${part}" (use e.g. 1,3-5)`);
+    for (let i = Number(m[1]); i <= Number(m[2] || m[1]); i++) out.push(i);
   }
   return out;
 }
 
+function number(flag, val, { min = 0, exclusive = false } = {}) {
+  const n = Number(val);
+  if (val === '' || !Number.isFinite(n) || n < min || (exclusive && n === min)) {
+    throw new Error(`${flag} must be a number ${exclusive ? '>' : '≥'} ${min} (got "${val}")`);
+  }
+  return n;
+}
+
 function tuning(v) {
   const o = {};
-  if (v.gap) o.gap = Number(v.gap);
-  if (v.pad) o.pad = Number(v.pad);
-  if (v['max-glyph-height']) o.maxGlyphHeight = Number(v['max-glyph-height']);
+  if (v.gap !== undefined) o.gap = number('--gap', v.gap);
+  if (v.pad !== undefined) o.pad = number('--pad', v.pad);
+  if (v['max-glyph-height'] !== undefined) o.maxGlyphHeight = number('--max-glyph-height', v['max-glyph-height']);
   for (const kv of v.set || []) {
     const [k, val] = kv.split('=');
     if (!(k in DEFAULTS)) throw new Error(`unknown option --set ${k} (known: ${Object.keys(DEFAULTS).join(', ')})`);
-    o[k] = Number(val);
+    o[k] = number(`--set ${k}`, val);
   }
   return o;
 }
@@ -90,13 +100,15 @@ async function main() {
   const workspace = path.resolve(v.workspace);
   if (cmd === 'serve' && !file) {
     const { startServer } = await import('../src/server.js');
-    await startServer({ workspace, port: Number(v.port) });
+    await startServer({ workspace, port: number('--port', v.port) });
     return;
   }
   if (!fs.existsSync(file)) throw new Error(`no such file: ${file}`);
 
   const pages = parsePages(v.pages);
   const opts = tuning(v);
+  const scale = number('--scale', v.scale, { exclusive: true });
+  const port = number('--port', v.port);
   const sessionPath = v.session || defaultSessionPath(file);
   const parsed = await parseFile(file, { pages });
   for (const w of parsed.warnings) console.warn(`warning: ${w}`);
@@ -106,6 +118,8 @@ async function main() {
       const s = loadSession(sessionPath, file);
       if (s.stale) console.warn(`warning: ${file} changed since ${sessionPath} was saved; element ids may not match. Use --redetect.`);
       else console.log(`using session ${sessionPath}`);
+      const ignored = Object.keys(opts).filter((k) => k !== 'pad');
+      if (ignored.length) console.warn(`warning: ${ignored.join(', ')} ignored: the saved session was detected with its own settings. Use --redetect to apply them.`);
       return { session: s, fromDisk: true };
     }
     return { session: createSession(parsed, opts), fromDisk: false };
@@ -122,8 +136,13 @@ async function main() {
       break;
     }
     case 'detect': {
-      const session = createSession(parsed, opts);
       const out = v.out || sessionPath;
+      // A session holds hand corrections (merges, drawn boxes, names); don't
+      // throw them away without being asked to.
+      if (fs.existsSync(out) && !v.redetect) {
+        throw new Error(`${out} already exists (it may hold corrections made in the UI). Pass --redetect to replace it.`);
+      }
+      const session = createSession(parsed, opts);
       saveSession(out, session);
       for (const a of session.assets) {
         console.log(`  p${a.page}  ${a.name.padEnd(28)} ${a.bbox.map((n) => n.toFixed(0)).join(',')}  (${a.elementIds.length} el)`);
@@ -140,7 +159,7 @@ async function main() {
       const m = exportSession(parsed, session, {
         out,
         formats,
-        scale: Number(v.scale),
+        scale,
         pad: opts.pad,
         contactSheet: !v['no-contact-sheet'],
       });
@@ -155,7 +174,7 @@ async function main() {
       const { startServer, exportDirFor } = await import('../src/server.js');
       const pagesMap = new Map(parsed.pages.map((p) => [p.page, p]));
       const doc = { file, parsed, session, sessionPath, exportDir: exportDirFor(file), pages: pagesMap };
-      await startServer({ doc, workspace, port: Number(v.port) });
+      await startServer({ doc, workspace, port });
       break;
     }
     default:

@@ -15,9 +15,14 @@ before(async () => {
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'svgx-ws-'));
   server = http.createServer(createApp({ workspace }));
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  // On Node < 20 a top-level after() only runs once the event loop is idle,
+  // which a listening server prevents; unref() breaks that deadlock.
+  server.unref();
   base = `http://127.0.0.1:${server.address().port}`;
 });
 after(() => {
+  // fetch keeps connections alive, and close() waits for them on Node < 19
+  server.closeAllConnections();
   server.close();
   fs.rmSync(workspace, { recursive: true, force: true });
 });
@@ -75,4 +80,71 @@ test('exports everything as a valid zip', async () => {
   assert.ok(names.includes('manifest.json') && names.includes('_contact-sheet.png'));
   assert.equal(names.filter((n) => n.endsWith('.svg')).length, 10);
   assert.equal(names.filter((n) => n.endsWith('.png')).length, 11, '10 assets + contact sheet');
+});
+
+const post = (url, body, headers = {}) =>
+  fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+const state = async () => (await fetch(`${base}/api/state`)).json();
+
+test('undo and redo step through edits', async () => {
+  const before = await state();
+  assert.equal(before.canUndo, false);
+  const ids = before.assets.slice(0, 3).map((a) => a.id);
+  let s = await (await post('/api/delete', { ids })).json();
+  assert.equal(s.assets.length, before.assets.length - 3);
+  assert.equal(s.canUndo, true);
+
+  s = await (await post('/api/undo')).json();
+  assert.deepEqual(s.assets.map((a) => a.id), before.assets.map((a) => a.id), 'one undo restores the whole batch');
+  assert.equal(s.canRedo, true);
+  const saved = JSON.parse(fs.readFileSync(path.join(workspace, 'LiftCom_Mockup_Outlined.ai.extract.json'), 'utf8'));
+  assert.equal(saved.assets.length, before.assets.length, 'undo is saved to the session file');
+
+  s = await (await post('/api/redo')).json();
+  assert.equal(s.assets.length, before.assets.length - 3);
+  assert.equal((await post('/api/redo')).status, 409, 'nothing left to redo');
+  await post('/api/undo');
+});
+
+test('a failed edit changes nothing and adds no undo step', async () => {
+  const before = await state();
+  const res = await post('/api/redetect', { page: 1, options: { gap: '' } });
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /gap/);
+  const after = await state();
+  assert.equal(after.options.gap, before.options.gap);
+  assert.equal(after.canRedo, before.canRedo, 'redo stack untouched');
+  assert.equal((await post('/api/redetect', { page: 1, options: { nope: 1 } })).status, 400);
+  assert.equal((await post('/api/merge', { ids: 'x' })).status, 400);
+  assert.equal((await post('/api/assets', { page: 1, bbox: [10, 10, 10, 20] })).status, 400);
+});
+
+test('refuses cross-site writes and foreign Host headers', async () => {
+  const evil = await post('/api/export', { out: path.join(workspace, 'evil') }, { origin: 'https://evil.example' });
+  assert.equal(evil.status, 403);
+  assert.equal(fs.existsSync(path.join(workspace, 'evil')), false);
+  const same = await post('/api/undo', {}, { origin: base });
+  assert.notEqual(same.status, 403, 'same-origin requests from the UI are allowed');
+  // DNS rebinding: a hostile domain resolving to 127.0.0.1
+  const status = await new Promise((resolve, reject) => {
+    http.get(`${base}/api/state`, { headers: { host: 'evil.example' } }, (r) => resolve(r.statusCode)).on('error', reject);
+  });
+  assert.equal(status, 403);
+});
+
+test('rejects out-of-range PNG scales', async () => {
+  const id = (await state()).assets[0].id;
+  assert.equal((await fetch(`${base}/api/assets/${id}.png?scale=500`)).status, 400);
+  assert.equal((await fetch(`${base}/api/export.zip?scale=abc`)).status, 400);
+  assert.equal((await fetch(`${base}/api/export.zip?formats=gif`)).status, 400);
+  const png = await fetch(`${base}/api/assets/${id}.png?scale=2&download`);
+  assert.equal(png.status, 200);
+  assert.match(png.headers.get('content-disposition'), /filename\*=UTF-8''/);
+});
+
+test('an unreadable upload is not left in the workspace', async () => {
+  const res = await upload('broken.pdf', Buffer.from('%PDF-1.7\nthis is not really a pdf\n'));
+  assert.equal(res.status, 422);
+  assert.equal(fs.existsSync(path.join(workspace, 'broken.pdf')), false);
+  assert.ok(!(await state()).recent.some((r) => r.name === 'broken.pdf'));
 });

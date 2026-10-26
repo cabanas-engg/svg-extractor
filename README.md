@@ -48,7 +48,9 @@ node bin/svg-extractor.js inspect sheet.ai
 ```
 
 Corrections made in the UI are saved to `<file>.extract.json`, and `export`
-picks that session up automatically. Pass `--redetect` to start over.
+picks that session up automatically. Pass `--redetect` to start over;
+`detect` refuses to overwrite an existing session without it, so corrections
+aren't lost by accident.
 
 ### Tuning
 
@@ -71,6 +73,7 @@ Styled after [schemabuddy.dev](https://www.schemabuddy.dev/): dark by default, w
 - **M** merges, **S** splits (re-clusters at half the gap), **X** excludes, **Del** deletes.
 - Drag on an empty part of the page to draw a box by hand, or drag a selected box's corners to resize it.
 - Rename an asset in the sidebar. The thumbnails are the actual exported SVGs.
+- **Ctrl/⌘ Z** undoes the last edit, **Ctrl/⌘ Shift Z** (or Ctrl Y) redoes it. Undo history lasts until you open another file or restart the server.
 - **E** opens the export dialog (download a .zip, or save to a folder). **O** opens a file.
 - The sidebar's *All pages* tab lists every page's assets.
 
@@ -80,5 +83,7 @@ Styled after [schemabuddy.dev](https://www.schemabuddy.dev/): dark by default, w
 npm test            # regression tests against test/fixtures/mockup.pdf
 npm run fixture     # regenerate the synthetic fixture
 ```
+
+CI runs `npm test` on Node 20 and 22 for every push (`.github/workflows/test.yml`).
 
 See `CLAUDE.md` for the design, known limitations and open questions.

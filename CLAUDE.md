@@ -51,6 +51,11 @@ test/                  node:test regression tests (synthetic fixture + real refe
 ```
 
 Commands: `npm test`, `npm run fixture`, `node bin/svg-extractor.js --help`.
+CI (`.github/workflows/test.yml`) runs `npm test` on Node 20 and 22.
+
+Tests that start an HTTP server must `unref()` it and call
+`closeAllConnections()` in `after()`: on Node < 20 a top-level `after` only
+runs once the event loop is idle, so a listening server deadlocks the run.
 
 ## Core approach (as built)
 
@@ -88,6 +93,10 @@ Commands: `npm test`, `npm run fixture`, `node bin/svg-extractor.js --help`.
    (+ `pad`). PNG rasterises *that same SVG* via `@resvg/resvg-js` (option 2 from
    the original spec — one crop path for both formats). PNG default 3× native
    size, `--scale` to override. Default format SVG; `--format svg,png` for both.
+   `svgToPNG` only loads system fonts when the SVG contains live `<text>`:
+   resvg rescans every installed font per call (seconds each), which made
+   PNG export ~1000× slower. Everything else, including the contact sheet's
+   captions, uses pdfjs-dist's bundled Liberation Sans.
    Every export writes `manifest.json` (names, boxes, sizes, colours used) and
    `_contact-sheet.png`.
 7. **Review/correct UI** (`serve`) — the page is rendered by PDF.js in the
@@ -107,8 +116,23 @@ Commands: `npm test`, `npm run fixture`, `node bin/svg-extractor.js --help`.
    different bytes gets a `-2` suffix. Cap 300MB (`MAX_UPLOAD`). Every
    workspace file appears under **Open file → Recent**. Export offers
    **Download .zip** (`GET /api/export.zip`, built in memory by
-   `buildExport` + `zip.js`) besides saving to a folder. The server binds to
-   127.0.0.1 only — it's a local tool, not a hosted service.
+   `buildExport` + `zip.js`) besides saving to a folder. An upload that has a
+   `%PDF-` header but won't parse is deleted again (422), so it never shows
+   up in Recent.
+9. **Server safety** — binds to 127.0.0.1 only (a local tool, not a hosted
+   service). That alone doesn't stop *other web pages in the same browser*
+   from calling it, so `checkRequest` in `server.js` refuses a `Host` that
+   isn't 127.0.0.1/localhost/[::1] (DNS rebinding) and any non-GET with a
+   foreign `Origin` (cross-site writes, e.g. `/api/export` to an arbitrary
+   folder). Requests with no `Origin` (curl, tests) are allowed. Inputs are
+   validated at the boundary: tuning options must be known `DEFAULTS` keys
+   with finite numbers ≥ 0, PNG scale is capped at 10, boxes must be
+   non-degenerate.
+10. **Undo/redo** — every session edit goes through `edit()` in `server.js`,
+   which snapshots the session JSON before the change (max 100), rolls back
+   if the edit throws, and records nothing if nothing changed. Multi-select
+   exclude/delete use `POST /api/exclude` / `/api/delete` so one undo reverts
+   the whole batch. History is in memory per open document.
 
 All thresholds are in `DEFAULTS` in `src/detect.js` and settable via CLI
 (`--gap`, `--pad`, `--max-glyph-height`, `--set key=value`) or the UI.
@@ -200,6 +224,7 @@ Nothing in `app.css` hard-codes a colour; everything goes through tokens.
 - Validated against the 18 LiftCom reference crops (18/18).
 - Review UI restyled to match schemabuddy.dev (dark default + light toggle).
 - Browser upload (drop/pick), workspace with recent files, .zip download.
+- Undo/redo, request-origin checks, input validation, CI.
 - Next: run against a real AES mockup source file (`.ai`/PDF, into
   `test/fixtures/real/`) to check real spacing and labels; OCR naming for
   outlined labels.
