@@ -643,7 +643,7 @@
           <div class="feature"><div class="ic"><svg class="icon"><use href="#i-files"/></svg></div><h3>Everything you need, in one export</h3><p>SVGs, PNGs at any scale, a <code>manifest.json</code> listing each asset's size and colours, and a <code>_contact-sheet.png</code>. Download it as one <code>.zip</code>.</p></div>
           <div class="feature"><div class="ic"><svg class="icon"><use href="#i-terminal"/></svg></div><h3>CLI for batch runs</h3><p><code>detect</code>, <code>export</code>, <code>inspect</code> and <code>serve</code>. The CLI and the UI share one session file, so corrections made in the browser carry into scripted exports.</p></div>
           <div class="feature"><div class="ic"><svg class="icon"><use href="#i-sliders"/></svg></div><h3>Tunable</h3><p>Every threshold (gap, padding, glyph size, background area) can be set per run with <code>--gap</code> or <code>--set key=value</code>, or per page in the UI.</p></div>
-          <div class="feature"><div class="ic"><svg class="icon"><use href="#i-lock"/></svg></div><h3>Stays on your machine</h3><p>No uploads to a service. The server listens on 127.0.0.1 only and refuses requests from other websites, so client artwork never leaves your computer.</p></div>
+          <div class="feature"><div class="ic"><svg class="icon"><use href="#i-lock"/></svg></div><h3>Stays on your machine</h3><p>No uploads to a service. The local server listens on 127.0.0.1 only. The static build runs the same extraction in the browser, so the file never leaves the tab.</p></div>
         </div>
       </div>
     </section>
@@ -680,7 +680,7 @@
     --scale 4</pre><button class="copy" data-copy="node bin/svg-extractor.js export sheet.ai -o icons/ --format svg,png --scale 4" aria-label="Copy export command"><svg class="icon idle"><use href="#i-copy"/></svg><svg class="icon done"><use href="#i-check"/></svg></button></div>
           </div>
         </div>
-        <p class="req">Needs <b>Node 20+</b>. <code>.ai</code> files must be saved with <b>Create PDF Compatible File</b>, which is Illustrator's default.</p>
+        <p class="req">Needs <b>Node 20+</b> for the CLI and local server. <code>npm run build:web</code> also produces a static app you can host with no server (see the README). <code>.ai</code> files must be saved with <b>Create PDF Compatible File</b>, which is Illustrator's default.</p>
       </div>
     </section>
 

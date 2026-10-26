@@ -37,19 +37,19 @@ test('starts with no file open', async () => {
 });
 
 test('uploading a PDF-compatible .ai opens it and detects assets', async () => {
-  const res = await upload('LiftCom Mockup (Outlined).ai', fs.readFileSync(FIXTURE));
+  const res = await upload('Mockup Sheet (Outlined).ai', fs.readFileSync(FIXTURE));
   assert.equal(res.status, 200);
   const s = await res.json();
   assert.equal(s.empty, false);
-  assert.equal(s.file, 'LiftCom_Mockup_Outlined.ai');
+  assert.equal(s.file, 'Mockup_Sheet_Outlined.ai');
   assert.equal(s.assets.length, 10);
-  assert.ok(fs.existsSync(path.join(workspace, 'LiftCom_Mockup_Outlined.ai.extract.json')), 'session saved next to the upload');
+  assert.ok(fs.existsSync(path.join(workspace, 'Mockup_Sheet_Outlined.ai.extract.json')), 'session saved next to the upload');
   assert.equal((await fetch(`${base}/api/source`)).status, 200);
 });
 
 test('re-uploading identical bytes reuses the file and its session', async () => {
-  const s = await (await upload('LiftCom Mockup (Outlined).ai', fs.readFileSync(FIXTURE))).json();
-  assert.equal(s.file, 'LiftCom_Mockup_Outlined.ai');
+  const s = await (await upload('Mockup Sheet (Outlined).ai', fs.readFileSync(FIXTURE))).json();
+  assert.equal(s.file, 'Mockup_Sheet_Outlined.ai');
   assert.equal(s.recent.length, 1);
 });
 
@@ -59,11 +59,11 @@ test('rejects files that are not PDF-compatible', async () => {
   assert.match((await res.json()).error, /PDF Compatible/);
   assert.equal(fs.readdirSync(workspace).filter((f) => f.startsWith('.upload-')).length, 0, 'temp file cleaned up');
   // the open document is untouched
-  assert.equal((await (await fetch(`${base}/api/state`)).json()).file, 'LiftCom_Mockup_Outlined.ai');
+  assert.equal((await (await fetch(`${base}/api/state`)).json()).file, 'Mockup_Sheet_Outlined.ai');
 });
 
 test('reopens a file from the workspace', async () => {
-  const res = await fetch(`${base}/api/open`, { method: 'POST', body: JSON.stringify({ name: 'LiftCom_Mockup_Outlined.ai' }) });
+  const res = await fetch(`${base}/api/open`, { method: 'POST', body: JSON.stringify({ name: 'Mockup_Sheet_Outlined.ai' }) });
   assert.equal(res.status, 200);
   const bad = await fetch(`${base}/api/open`, { method: 'POST', body: JSON.stringify({ name: '../package.json' }) });
   assert.equal(bad.status, 404);
@@ -72,7 +72,7 @@ test('reopens a file from the workspace', async () => {
 test('exports everything as a valid zip', async () => {
   const res = await fetch(`${base}/api/export.zip?formats=svg,png&scale=2`);
   assert.equal(res.status, 200);
-  assert.match(res.headers.get('content-disposition'), /LiftCom_Mockup_Outlined-assets\.zip/);
+  assert.match(res.headers.get('content-disposition'), /Mockup_Sheet_Outlined-assets\.zip/);
   const file = path.join(workspace, 'out.zip');
   fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
   const listing = execFileSync('python3', ['-c', 'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None; print("\\n".join(z.namelist()))', file]).toString();
@@ -97,7 +97,7 @@ test('undo and redo step through edits', async () => {
   s = await (await post('/api/undo')).json();
   assert.deepEqual(s.assets.map((a) => a.id), before.assets.map((a) => a.id), 'one undo restores the whole batch');
   assert.equal(s.canRedo, true);
-  const saved = JSON.parse(fs.readFileSync(path.join(workspace, 'LiftCom_Mockup_Outlined.ai.extract.json'), 'utf8'));
+  const saved = JSON.parse(fs.readFileSync(path.join(workspace, 'Mockup_Sheet_Outlined.ai.extract.json'), 'utf8'));
   assert.equal(saved.assets.length, before.assets.length, 'undo is saved to the session file');
 
   s = await (await post('/api/redo')).json();

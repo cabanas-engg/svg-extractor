@@ -4,3 +4,4 @@ node_modules/
 test/fixtures/real/
 .DS_Store
 workspace/
+dist/

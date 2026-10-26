@@ -12,27 +12,26 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { parseFile } from './parse.js';
 import { renderAssetSVG, exportSession, buildExport } from './export.js';
-import { svgToPNG } from './svg.js';
+import { svgToPNG } from './svg-png.js';
 import { zip } from './zip.js';
-import { DEFAULTS } from './detect.js';
 import {
   saveSession, openSession, addManualAsset, mergeAssets, splitAsset, updateAsset, deleteAsset, redetectPage, selectInBox,
   defaultSessionPath,
 } from './session.js';
+import { MAX_UPLOAD, PDF_COMPAT_MESSAGE, fail, parseScale, parseFormats, checkBox, parseOptions, safeName } from './validate.js';
 
 const require = createRequire(import.meta.url);
 const UI_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'ui');
 const PDFJS_DIR = path.join(path.dirname(require.resolve('pdfjs-dist/package.json')), 'legacy', 'build');
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
-export const MAX_UPLOAD = 300 * 1024 * 1024;
+export { MAX_UPLOAD };
 const SOURCE_EXT = /\.(ai|pdf)$/i;
 
-const MAX_SCALE = 10;
 const MAX_HISTORY = 100;
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
-const httpError = (status, message) => Object.assign(new Error(message), { status });
+const httpError = fail;
 
 // Binding to 127.0.0.1 keeps other machines out, but not other web pages open
 // in the same browser: they can still send requests to localhost. A Host check
@@ -48,44 +47,10 @@ function checkRequest(req) {
   }
 }
 
-function parseScale(v, fallback = 3) {
-  if (v === undefined || v === null || v === '') return fallback;
-  const s = Number(v);
-  if (!Number.isFinite(s) || s <= 0 || s > MAX_SCALE) throw httpError(400, `scale must be a number between 0 and ${MAX_SCALE}`);
-  return s;
-}
-
 // ASCII fallback plus the exact UTF-8 name (RFC 6266); a raw non-ASCII or
 // quoted name would make Node reject the header.
 const attachment = (name) =>
   `attachment; filename="${name.replace(/[^\x20-\x7e]|["\\]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`;
-
-function parseFormats(list) {
-  const formats = (Array.isArray(list) ? list : []).map((f) => String(f).trim().toLowerCase()).filter(Boolean);
-  if (!formats.length) throw httpError(400, 'pick at least one format');
-  for (const f of formats) if (f !== 'svg' && f !== 'png') throw httpError(400, `unknown format ${f}`);
-  return formats;
-}
-
-function checkBox(b) {
-  if (!Array.isArray(b) || b.length !== 4 || !b.every(Number.isFinite) || b[2] <= b[0] || b[3] <= b[1]) {
-    throw httpError(400, 'bbox must be [x0, y0, x1, y1] with x1 > x0 and y1 > y0');
-  }
-  return b;
-}
-
-// Only known, finite, non-negative thresholds; an empty field in the UI would
-// otherwise arrive as 0 (or NaN) and silently wreck detection.
-function parseOptions(options) {
-  const out = {};
-  for (const [k, v] of Object.entries(options || {})) {
-    if (!(k in DEFAULTS)) throw httpError(400, `unknown option ${k}`);
-    const n = Number(v);
-    if (v === '' || v === null || !Number.isFinite(n) || n < 0) throw httpError(400, `${k} must be a number ≥ 0`);
-    out[k] = n;
-  }
-  return out;
-}
 
 export const exportDirFor = (file) => path.join(path.dirname(path.resolve(file)), path.basename(file).replace(/\.[^.]+$/, '') + '-assets');
 
@@ -101,12 +66,6 @@ export async function openDocument(file, { sessionPath, redetect, opts } = {}) {
     exportDir: exportDirFor(file),
     pages: new Map(parsed.pages.map((p) => [p.page, p])),
   };
-}
-
-// Keep the name recognisable but filesystem-safe.
-function safeName(name) {
-  const base = path.basename(String(name || 'upload')).normalize('NFKD').replace(/[^\w.\- ]+/g, '').replace(/\s+/g, '_');
-  return (base.replace(/^\.+/, '') || 'upload').slice(0, 120);
 }
 
 export function createApp({ workspace, doc: initial = null }) {
@@ -241,10 +200,7 @@ export function createApp({ workspace, doc: initial = null }) {
     }
     if (!head.toString('latin1').includes('%PDF-')) {
       fs.rmSync(tmp, { force: true });
-      throw httpError(
-        415,
-        'This file is not PDF-compatible. Upload a PDF, or an .ai saved with "Create PDF Compatible File" turned on in Illustrator.',
-      );
+      throw httpError(415, PDF_COMPAT_MESSAGE);
     }
     return { tmp, sha256: hash.digest('hex') };
   }
@@ -396,13 +352,13 @@ export function createApp({ workspace, doc: initial = null }) {
         const { formats: f = ['svg'], scale, out } = await body(req);
         const formats = parseFormats(f);
         const dir = out ? path.resolve(out) : need().exportDir;
-        const manifest = exportSession(need().parsed, doc.session, { out: dir, formats, scale: parseScale(scale) });
+        const manifest = await exportSession(need().parsed, doc.session, { out: dir, formats, scale: parseScale(scale) });
         return send(res, 200, { out: dir, count: manifest.assets.filter((a) => !a.skipped).length, manifest });
       }
       if (m === 'GET' && p === '/api/export.zip') {
         const formats = parseFormats((url.searchParams.get('formats') || 'svg').split(','));
         const scale = parseScale(url.searchParams.get('scale'));
-        const { files } = buildExport(need().parsed, doc.session, { formats, scale });
+        const { files } = await buildExport(need().parsed, doc.session, { formats, scale });
         const name = path.basename(doc.file).replace(/\.[^.]+$/, '') + '-assets.zip';
         return send(res, 200, zip(files), 'application/zip', { 'content-disposition': attachment(name) });
       }

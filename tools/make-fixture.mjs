@@ -3,7 +3,7 @@
 // title, a page background, a divider rule, a clip group and a tight-label case.
 //
 // This is a smoke-test fixture only. The text/icon heuristics still need tuning
-// against real AES mockups — synthetic cases are not a substitute.
+// against real Illustrator mockups — synthetic cases are not a substitute.
 //
 //   node tools/make-fixture.mjs [outDir]
 import fs from 'node:fs';
@@ -36,7 +36,7 @@ doc.pipe(fs.createWriteStream(path.join(outDir, 'mockup.pdf')));
 doc.addPage();
 doc.rect(0, 0, 792, 612).fill('#ffffff');
 doc.lineWidth(0.5).rect(18, 18, 756, 576).stroke('#cccccc'); // artboard frame
-doc.font('Helvetica-Bold').fontSize(18).fillColor('#222222').text('LiftCom Package Graphics', 40, 36);
+doc.font('Helvetica-Bold').fontSize(18).fillColor('#222222').text('Sample Package Graphics', 40, 36);
 doc.moveTo(40, 64).lineTo(752, 64).lineWidth(1).stroke('#999999'); // divider rule
 
 const row1 = [

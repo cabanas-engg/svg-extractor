@@ -7,9 +7,9 @@ artwork — icons, diagrams, annotated callouts — and pulls out individual ass
 as clean, standalone SVGs (and PNGs), without a human manually eyeballing pixel
 coordinates for every crop.
 
-This grew out of doing this by hand in Claude chat for AES/Alliance Elevator
-configurator mockups (LiftCom package graphics, EdgeSL door/counterweight
-diagrams). That worked, but every file needed:
+This grew out of doing this by hand in Claude chat for customer artwork:
+configurator mockups (package graphics, door and counterweight diagrams).
+That worked, but every file needed:
 
 - Working around `.ai` uploads arriving corrupted (binary mangled by the chat
   upload pipeline) by falling back to a PDF export of the same file.
@@ -35,15 +35,23 @@ upload.
 
 ```
 bin/svg-extractor.js   CLI: detect | export | serve [file] | inspect
-src/parse.js           PDF.js operator list → flat page elements (paths, images, live text)
+src/parse-core.js      operator walk shared by Node and the browser (caller passes OPS)
+src/parse.js           Node: read file, legacy pdf.js, sha256 → parse-core
 src/detect.js          classify roles, outlined-text heuristic, clustering, label pairing, naming
-src/session.js         editable session JSON (<file>.extract.json): merge/split/manual/rename/exclude
-src/svg.js             element subset → standalone SVG (tight viewBox); SVG → PNG via resvg
-src/export.js          batch export, manifest.json, _contact-sheet.png
-src/png.js             tiny PNG encoder for embedded raster images
-src/server.js          local review UI server (node:http, no framework): uploads, workspace, zip export
-src/zip.js             minimal zip writer for "Download .zip"
-ui/                    review UI (vanilla JS, PDF.js page render + SVG overlay); tokens.css = all design tokens (schemabuddy palette), icons.js = inlined Lucide icons
+src/session-core.js    editable session model with no filesystem
+src/session.js         Node session JSON (<file>.extract.json) around session-core
+src/svg.js             element subset → standalone SVG (tight viewBox)
+src/svg-png.js         Node SVG → PNG via @resvg/resvg-js
+src/export-core.js     in-memory export; PNG rasteriser is injected
+src/export.js          Node: resvg-js + write the folder, manifest, contact sheet
+src/png.js             PNG encoder for embedded images (fflate; Node and browser)
+src/zip.js             minimal zip writer (fflate; Node and browser)
+src/validate.js        shared upload, tuning and bbox checks
+src/server.js          local review UI server (node:http): uploads, workspace, zip export
+client/                browser engine, IndexedDB, resvg-wasm with a canvas fallback
+ui/                    review UI (vanilla JS, PDF.js + SVG overlay); tokens.css, icons.js
+ui/backend.js          fetch client for serve; the static build aliases client/backend.js
+tools/build-web.mjs    writes dist/ for static hosting. preview-web.mjs serves it
 tools/make-fixture.mjs generates test/fixtures/mockup.{pdf,ai}
 tools/eval-reference.mjs scores detection against hand-made reference crops
 tools/outline.mjs      outlined-text helper for test sheets (don't use pdfkit's doc.path(svg) — it truncates glyphs)
@@ -51,7 +59,8 @@ test/                  node:test regression tests (synthetic fixture + real refe
 docs/                  landing page: one static index.html (inline CSS/SVG, same tokens as ui/); GitHub Pages-ready, not published
 ```
 
-Commands: `npm test`, `npm run fixture`, `node bin/svg-extractor.js --help`.
+Commands: `npm test`, `npm run fixture`, `npm run build:web`, `node bin/svg-extractor.js --help`.
+The static app (`dist/`) is the review UI with no Node server: open/drop a file, detect, edit, SVG+PNG and zip, sessions in IndexedDB. `serve` is unchanged and still the path `npm test` covers. PNG in the browser is resvg-wasm, with a canvas fallback if the wasm file does not load.
 CI (`.github/workflows/test.yml`) runs `npm test` on Node 20, 22 and 24.
 
 Tests that start an HTTP server must `unref()` it and call
@@ -63,7 +72,7 @@ runs once the event loop is idle, so a listening server deadlocks the run.
 1. **Parse — `pdfjs-dist`** (pinned 4.10.x; the `constructPath` operator format
    changed in 5.x, so bumping it means updating `src/parse.js`). Pure JS, no
    native binary (unlike poppler/pdftocairo — GPL, painful to bundle).
-2. **Extract geometry** — `parse.js` walks the operator list itself, tracking
+2. **Extract geometry** — `parse-core.js` walks the operator list itself, tracking
    the graphics state (CTM, save/restore, form XObjects, colours, line style,
    alpha, clip stack). Each painted path becomes an element with its local-space
    path data, its CTM, an exact viewport-space bbox (Bezier extrema, stroke
@@ -147,7 +156,7 @@ All thresholds are in `DEFAULTS` in `src/detect.js` and settable via CLI
 ## Known hard parts (don't pretend these are solved)
 
 - **Text vs. icon separation is a heuristic.** Validated on the synthetic
-  fixture and on the 18 hand-made LiftCom crops (see below), but not yet on a
+  fixture and on the 18 hand-made reference crops (see below), but not yet on a
   real, busy mockup page with its real spacing. Known failure modes:
   a tight row of 3+ small, varied shapes reads as text; very large display type
   (> `maxGlyphHeight`) reads as geometry; script/connected lettering may not.
@@ -167,12 +176,12 @@ All thresholds are in `DEFAULTS` in `src/detect.js` and settable via CLI
   some blend modes) won't round-trip. Fine for outlined/flattened artwork
   (files so far are literally named "...Outlined...").
 
-## Reference set: LiftCom icons
+## Reference set: hand-made icons
 
-`liftcom_icons_svg.zip` holds the 18 crops made by hand in chat (pdftocairo
+`reference_icons.zip` holds the 18 crops made by hand in chat (pdftocairo
 output; viewBoxes are in the original page's coordinates, ~1pt margin). It's
-client artwork, so it lives in `test/fixtures/real/liftcom_icons_svg/`
-(gitignored). `node tools/eval-reference.mjs test/fixtures/real/liftcom_icons_svg`
+customer artwork, so it lives in `test/fixtures/real/reference_icons/`
+(gitignored). `node tools/eval-reference.mjs test/fixtures/real/reference_icons`
 lays them out on a sheet with outlined labels underneath, runs detection and
 checks each comes back as exactly one asset with exactly its paths;
 `test/reference.test.js` runs the same check when the folder exists.
@@ -228,13 +237,13 @@ Nothing in `app.css` hard-codes a colour; everything goes through tokens.
 - Built: parser, classifier/text heuristic, clustering, label pairing, session
   model with merge/split/manual/resize/rename/exclude, SVG+PNG export,
   manifest, contact sheet, review UI, CLI, regression tests (fixture only).
-- Validated against the 18 LiftCom reference crops (18/18).
+- Validated against the 18 hand-made reference crops (18/18).
 - Review UI restyled to match schemabuddy.dev (dark default + light toggle).
 - Browser upload (drop/pick), workspace with recent files, .zip download.
 - Undo/redo, request-origin checks, input validation, CI.
 - UI polish: list filter, copy SVG, pointer-anchored zoom, shortcut sheet,
   cached thumbnails, no canvas flicker. `serve --open`. Landing page in `docs/`
-  (client-free illustrations: no LiftCom/AES artwork or names).
-- Next: run against a real AES mockup source file (`.ai`/PDF, into
+  (illustrations only; no customer artwork or names).
+- Next: run against a real Illustrator mockup source file (`.ai`/PDF, into
   `test/fixtures/real/`) to check real spacing and labels; OCR naming for
   outlined labels.

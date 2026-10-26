@@ -77,7 +77,7 @@ test('live text labels give names', () => {
   assert.ok(s.assets.some((a) => a.name === 'real_text_label'));
 });
 
-test('merge, split, manual box and export round-trip', () => {
+test('merge, split, manual box and export round-trip', async () => {
   const s = createSession(parsed);
   const ring = s.assets.filter((a) => a.page === 1 && a.row === 1).slice(0, 2);
   const merged = mergeAssets(s, page1, ring.map((a) => a.id));
@@ -90,7 +90,7 @@ test('merge, split, manual box and export round-trip', () => {
   updateAsset(s, parts[0].id, { exclude: true });
 
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'svgx-'));
-  const m = exportSession(parsed, s, { out, formats: ['svg', 'png'], scale: 2 });
+  const m = await exportSession(parsed, s, { out, formats: ['svg', 'png'], scale: 2 });
   const files = fs.readdirSync(out);
   assert.ok(files.includes('tight_label.svg') && files.includes('tight_label.png'));
   assert.ok(files.includes('_contact-sheet.png') && files.includes('manifest.json'));

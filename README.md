@@ -76,9 +76,63 @@ Styled after [schemabuddy.dev](https://www.schemabuddy.dev/): dark by default, w
 - Rename an asset in the sidebar. The thumbnails are the actual exported SVGs; **Copy** puts an asset's SVG markup on the clipboard.
 - **/** filters the list by name or label text. **⌘/Ctrl + scroll** (or pinch) zooms around the pointer; **+ − 0** zoom in, out and to fit.
 - **?** lists every shortcut.
-- **Ctrl/⌘ Z** undoes the last edit, **Ctrl/⌘ Shift Z** (or Ctrl Y) redoes it. Undo history lasts until you open another file or restart the server.
+- **Ctrl/⌘ Z** undoes the last edit, **Ctrl/⌘ Shift Z** (or Ctrl Y) redoes it. Undo history lasts until you open another file or leave the page (the local server also drops it on restart).
 - **E** opens the export dialog (download a .zip, or save to a folder). **O** opens a file.
 - The sidebar's *All pages* tab lists every page's assets.
+
+## Static app (no Node server)
+
+The review UI can run entirely in the browser. Parsing, detection, session edits,
+SVG/PNG export and the zip download all happen on the page. Files stay in the
+tab; recent files and their sessions are kept in IndexedDB on that browser.
+Nothing is uploaded to a backend.
+
+```sh
+npm run build:web      # writes dist/
+npm run preview:web    # http://127.0.0.1:4173  (correct .mjs and .wasm types)
+```
+
+Open that page, drop `test/fixtures/mockup.pdf` (or any PDF-compatible `.ai`),
+and use **Download .zip**. **Save to folder** uses the File System Access API
+where the browser has it (Chrome, Edge); other browsers keep the zip download.
+
+The same `ui/` page is what `npm run serve` hosts. The build aliases its data
+layer to `client/` so the local server path is unchanged.
+
+### Deploy on Vercel
+
+`vercel.json` is already set up. Import the repo as a Vercel project (it can
+stay private) with:
+
+| Setting | Value |
+| --- | --- |
+| Framework preset | Other |
+| Root directory | repository root |
+| Build command | `npm run build:web` |
+| Output directory | `dist` |
+| Install command | `npm ci` (default; devDependencies are required for the build) |
+
+No environment variables. The PDF.js worker (`.mjs`) and resvg (`.wasm`) need
+to be served as JavaScript and WebAssembly; the headers in `vercel.json` set
+that. Any other static host works the same way: publish `dist/` and serve
+`.mjs` as `text/javascript` and `.wasm` as `application/wasm`.
+
+### GitHub Pages
+
+`.github/workflows/pages.yml` builds `dist/` and deploys it on every push to
+`master` (and when the workflow is run by hand). The site is
+[https://cabanas-engg.github.io/svg-extractor/](https://cabanas-engg.github.io/svg-extractor/).
+Paths in that build are relative to the page, so the same `dist/` works at
+that project subpath and at the root of another host.
+
+PNG export uses `@resvg/resvg-wasm` (same renderer family as the CLI). If that
+file fails to load, the page falls back to drawing the SVG on a canvas and says
+so in the sidebar. The contact sheet is included in the zip, as in the CLI.
+
+Files over 300MB are refused before they are parsed. A file that is not
+PDF-compatible (no `%PDF-` header in the first 1KB) is rejected with the same
+"Create PDF Compatible File" message as the local server, and is not added to
+Recent.
 
 ## Develop
 
@@ -89,7 +143,7 @@ npm run fixture     # regenerate the synthetic fixture
 
 CI runs `npm test` on Node 20, 22 and 24 for every push (`.github/workflows/test.yml`).
 
-The landing page is a single static file, `docs/index.html` (no build step). To
-publish it, turn on GitHub Pages for the `master` branch's `/docs` folder.
+The landing page is a single static file, `docs/index.html` (no build step).
+GitHub Pages publishes the static app above, not this file.
 
 See `CLAUDE.md` for the design, known limitations and open questions.
