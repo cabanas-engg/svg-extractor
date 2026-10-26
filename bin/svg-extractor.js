@@ -167,7 +167,7 @@ async function main() {
       const formats = v.format.split(',').map((s) => s.trim().toLowerCase());
       for (const f of formats) if (!['svg', 'png'].includes(f)) throw new Error(`unknown format ${f}`);
       const out = v.out || path.join(process.cwd(), path.basename(file).replace(/\.[^.]+$/, '') + '-assets');
-      const m = exportSession(parsed, session, {
+      const m = await exportSession(parsed, session, {
         out,
         formats,
         scale,

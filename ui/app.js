@@ -2,10 +2,10 @@
 // the file really looks like); boxes are an SVG overlay in the same pt
 // coordinate space the extractor uses. Thumbnails in the sidebar are the actual
 // exported SVGs, so a bad crop is visible before export.
-import * as pdfjs from '/pdfjs/pdf.mjs';
-import { icon, hydrateIcons } from '/ui/icons.js';
+import pdfjs from './pdfjs-setup.js';
+import backend from './backend.js';
+import { icon, hydrateIcons } from './icons.js';
 
-pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.mjs';
 hydrateIcons();
 
 const $ = (s) => document.querySelector(s);
@@ -25,14 +25,38 @@ const ui = {
 // ---------------------------------------------------------------- api
 
 async function api(method, url, body) {
-  const res = await fetch(url, {
-    method,
-    headers: body ? { 'content-type': 'application/json' } : {},
-    body: body ? JSON.stringify(body) : undefined,
+  return backend.request(method, url, body);
+}
+
+// HTTP mode puts a real URL on the link. The static build returns null and
+// the click handler builds the file in the page.
+function wireDownload(el, asset, ext, scale) {
+  const href = backend.downloadHref(asset, ext, scale);
+  if (href) {
+    el.href = href;
+    return;
+  }
+  el.href = '#';
+  el.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    backend.downloadAsset(asset.id, ext, scale).catch((err) => toast(err.message));
   });
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || res.statusText);
-  return json;
+}
+
+function syncClientChrome() {
+  const client = !!ui.data?.client;
+  const field = $('#outField');
+  if (field) field.hidden = client;
+  const folder = $('#exportFolder');
+  if (!client) {
+    folder.disabled = false;
+    folder.title = '';
+    return;
+  }
+  const ok = typeof showDirectoryPicker === 'function';
+  folder.disabled = !ok;
+  folder.title = ok ? 'Pick a folder to write the assets into' : 'This browser has no folder picker. Use Download .zip.';
 }
 
 async function mutate(method, url, body) {
@@ -189,9 +213,7 @@ function thumbKey(a) {
 
 async function copySVG(a, btn) {
   try {
-    const res = await fetch(`/api/assets/${encodeURIComponent(a.id)}.svg?k=${thumbKey(a)}`);
-    if (!res.ok) throw new Error((await res.json()).error);
-    await navigator.clipboard.writeText(await res.text());
+    await navigator.clipboard.writeText(await backend.readAsset(a.id));
     btn.replaceChildren(icon('check'), 'Copied');
     setTimeout(() => btn.replaceChildren(icon('copy'), 'Copy'), 1500);
   } catch (e) {
@@ -215,17 +237,20 @@ function assetItem(a) {
   const id = encodeURIComponent(a.id);
   const kind = a.exclude ? '<span class="badge excluded">excluded</span>' : `<span class="badge ${a.kind === 'manual' ? 'manual' : ''}">${a.kind === 'manual' ? 'hand-drawn' : a.kind}</span>`;
   li.innerHTML = `
-    <div class="thumb"><img alt="" loading="lazy" src="/api/assets/${id}.svg?k=${thumbKey(a)}"></div>
+    <div class="thumb"><img alt="" loading="lazy"></div>
     <div class="meta">
       <input type="text" value="${escapeAttr(a.name)}" aria-label="Asset name" spellcheck="false">
       <div class="row">${kind}<span class="mono">${w}×${h}pt</span>${swatches}</div>
       <div class="row">
-        <a class="dl" href="/api/assets/${id}.svg?download" data-icon-slot>SVG</a>
-        <a class="dl" href="/api/assets/${id}.png?download&scale=3" data-icon-slot>PNG@3x</a>
+        <a class="dl" data-dl="svg" data-icon-slot>SVG</a>
+        <a class="dl" data-dl="png" data-icon-slot>PNG@3x</a>
         <button type="button" class="dl copy" title="Copy SVG markup to the clipboard">Copy</button>
         ${a.labelText ? `<span class="badge label" title="nearest label">${escapeAttr(a.labelText)}</span>` : ''}
       </div>
     </div>`;
+  li.querySelector('.thumb img').src = backend.thumbURL(a, thumbKey(a));
+  wireDownload(li.querySelector('[data-dl="svg"]'), a, 'svg');
+  wireDownload(li.querySelector('[data-dl="png"]'), a, 'png', 3);
   for (const dl of li.querySelectorAll('[data-icon-slot]')) dl.prepend(icon('download'));
   const copy = li.querySelector('.copy');
   copy.prepend(icon('copy'));
@@ -630,17 +655,31 @@ function exportOptions() {
 }
 
 // Download: a plain GET so the browser streams it like any other download.
-$('#exportForm').addEventListener('submit', (e) => {
+$('#exportForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const o = exportOptions();
   if (!o) return;
-  const a = document.createElement('a');
-  a.href = `/api/export.zip?formats=${o.formats.join(',')}&scale=${o.scale}`;
-  a.download = '';
-  document.body.append(a);
-  a.click();
-  a.remove();
-  $('#exportResult').textContent = 'Preparing the .zip; your browser will download it in a moment.';
+  const href = backend.exportZipHref(o);
+  if (href) {
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = '';
+    document.body.append(a);
+    a.click();
+    a.remove();
+    $('#exportResult').textContent = 'Preparing the .zip; your browser will download it in a moment.';
+    return;
+  }
+  $('#exportResult').textContent = 'Preparing the .zip…';
+  busy('Preparing the .zip…');
+  try {
+    await backend.downloadZip(o);
+    $('#exportResult').textContent = 'Download started. It includes the SVGs and/or PNGs, manifest.json and _contact-sheet.png.';
+  } catch (err) {
+    $('#exportResult').textContent = err.message;
+  } finally {
+    busy(null);
+  }
 });
 
 $('#exportFolder').onclick = async () => {
@@ -648,7 +687,7 @@ $('#exportFolder').onclick = async () => {
   if (!o) return;
   $('#exportResult').textContent = 'Exporting…';
   try {
-    const r = await api('POST', '/api/export', o);
+    const r = await backend.exportFolder(o);
     $('#exportResult').textContent = `${r.count} assets → ${r.out} (contact sheet: _contact-sheet.png)`;
   } catch (err) {
     $('#exportResult').textContent = err.message;
@@ -728,14 +767,7 @@ async function uploadFile(file) {
   if (file.size > ui.data.maxUpload) return showError(`${file.name} is ${fmtSize(file.size)}; the limit is ${fmtSize(ui.data.maxUpload)}.`);
   busy(`Uploading and analysing ${file.name}…`);
   try {
-    const res = await fetch(`/api/upload?name=${encodeURIComponent(file.name)}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/octet-stream' },
-      body: file,
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || res.statusText);
-    ui.data = json;
+    ui.data = await backend.upload(file);
     await showDocument();
     toast(`Opened ${ui.data.file}: ${ui.data.assets.length} assets found`);
   } catch (e) {
@@ -807,6 +839,7 @@ function showStart() {
   $('#stats').replaceChildren();
   for (const id of ['#mergeBtn', '#splitBtn', '#excludeBtn', '#deleteBtn', '#undoBtn', '#redoBtn']) $(id).disabled = true;
   renderRecent();
+  syncClientChrome();
 }
 
 async function showDocument() {
@@ -827,17 +860,18 @@ async function showDocument() {
   ui.renderTask?.cancel();
   await ui.pdf?.destroy();
   // cache-buster: the URL is the same for every file
-  ui.pdf = await pdfjs.getDocument({ url: `/api/source?v=${Date.now()}` }).promise;
+  ui.pdf = await pdfjs.getDocument(backend.pdfOpenParams()).promise;
   const painted = renderPage();
   renderAll();
   fillTuning();
   renderRecent();
+  syncClientChrome();
   await painted;
 }
 
 // ---------------------------------------------------------------- boot
 
 (async function boot() {
-  ui.data = await api('GET', '/api/state');
+  ui.data = await backend.request('GET', '/api/state');
   await showDocument();
 })().catch((e) => toast(`Failed to load: ${e.message}`));

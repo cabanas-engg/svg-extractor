@@ -11,16 +11,21 @@
     "test": "node --test test/*.test.js",
     "fixture": "node tools/make-fixture.mjs",
     "start": "node bin/svg-extractor.js",
-    "serve": "node bin/svg-extractor.js serve --open"
+    "serve": "node bin/svg-extractor.js serve --open",
+    "build:web": "node tools/build-web.mjs",
+    "preview:web": "node tools/preview-web.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
+    "fflate": "^0.8.3",
     "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
+    "@resvg/resvg-wasm": "^2.6.2",
+    "esbuild": "^0.25.10",
     "opentype.js": "^2.0.0",
     "pdfkit": "^0.20.2"
   }
