@@ -117,6 +117,14 @@ to be served as JavaScript and WebAssembly; the headers in `vercel.json` set
 that. Any other static host works the same way: publish `dist/` and serve
 `.mjs` as `text/javascript` and `.wasm` as `application/wasm`.
 
+### GitHub Pages
+
+`.github/workflows/pages.yml` builds `dist/` and deploys it on every push to
+`master` (and when the workflow is run by hand). The site is
+[https://cabanas-engg.github.io/svg-extractor/](https://cabanas-engg.github.io/svg-extractor/).
+Paths in that build are relative to the page, so the same `dist/` works at
+that project subpath and at the root of another host.
+
 PNG export uses `@resvg/resvg-wasm` (same renderer family as the CLI). If that
 file fails to load, the page falls back to drawing the SVG on a canvas and says
 so in the sidebar. The contact sheet is included in the zip, as in the CLI.
@@ -135,7 +143,7 @@ npm run fixture     # regenerate the synthetic fixture
 
 CI runs `npm test` on Node 20, 22 and 24 for every push (`.github/workflows/test.yml`).
 
-The landing page is a single static file, `docs/index.html` (no build step). To
-publish it, turn on GitHub Pages for the `master` branch's `/docs` folder.
+The landing page is a single static file, `docs/index.html` (no build step).
+GitHub Pages publishes the static app above, not this file.
 
 See `CLAUDE.md` for the design, known limitations and open questions.
