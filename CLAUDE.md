@@ -51,7 +51,7 @@ test/                  node:test regression tests (synthetic fixture + real refe
 ```
 
 Commands: `npm test`, `npm run fixture`, `node bin/svg-extractor.js --help`.
-CI (`.github/workflows/test.yml`) runs `npm test` on Node 20 and 22.
+CI (`.github/workflows/test.yml`) runs `npm test` on Node 20, 22 and 24.
 
 Tests that start an HTTP server must `unref()` it and call
 `closeAllConnections()` in `after()`: on Node < 20 a top-level `after` only

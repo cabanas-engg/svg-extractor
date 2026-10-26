@@ -84,6 +84,6 @@ npm test            # regression tests against test/fixtures/mockup.pdf
 npm run fixture     # regenerate the synthetic fixture
 ```
 
-CI runs `npm test` on Node 20 and 22 for every push (`.github/workflows/test.yml`).
+CI runs `npm test` on Node 20, 22 and 24 for every push (`.github/workflows/test.yml`).
 
 See `CLAUDE.md` for the design, known limitations and open questions.
