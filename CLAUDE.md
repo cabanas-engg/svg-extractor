@@ -7,9 +7,9 @@ artwork — icons, diagrams, annotated callouts — and pulls out individual ass
 as clean, standalone SVGs (and PNGs), without a human manually eyeballing pixel
 coordinates for every crop.
 
-This grew out of doing this by hand in Claude chat for AES/Alliance Elevator
-configurator mockups (LiftCom package graphics, EdgeSL door/counterweight
-diagrams). That worked, but every file needed:
+This grew out of doing this by hand in Claude chat for customer artwork:
+configurator mockups (package graphics, door and counterweight diagrams).
+That worked, but every file needed:
 
 - Working around `.ai` uploads arriving corrupted (binary mangled by the chat
   upload pipeline) by falling back to a PDF export of the same file.
@@ -156,7 +156,7 @@ All thresholds are in `DEFAULTS` in `src/detect.js` and settable via CLI
 ## Known hard parts (don't pretend these are solved)
 
 - **Text vs. icon separation is a heuristic.** Validated on the synthetic
-  fixture and on the 18 hand-made LiftCom crops (see below), but not yet on a
+  fixture and on the 18 hand-made reference crops (see below), but not yet on a
   real, busy mockup page with its real spacing. Known failure modes:
   a tight row of 3+ small, varied shapes reads as text; very large display type
   (> `maxGlyphHeight`) reads as geometry; script/connected lettering may not.
@@ -176,12 +176,12 @@ All thresholds are in `DEFAULTS` in `src/detect.js` and settable via CLI
   some blend modes) won't round-trip. Fine for outlined/flattened artwork
   (files so far are literally named "...Outlined...").
 
-## Reference set: LiftCom icons
+## Reference set: hand-made icons
 
-`liftcom_icons_svg.zip` holds the 18 crops made by hand in chat (pdftocairo
+`reference_icons.zip` holds the 18 crops made by hand in chat (pdftocairo
 output; viewBoxes are in the original page's coordinates, ~1pt margin). It's
-client artwork, so it lives in `test/fixtures/real/liftcom_icons_svg/`
-(gitignored). `node tools/eval-reference.mjs test/fixtures/real/liftcom_icons_svg`
+customer artwork, so it lives in `test/fixtures/real/reference_icons/`
+(gitignored). `node tools/eval-reference.mjs test/fixtures/real/reference_icons`
 lays them out on a sheet with outlined labels underneath, runs detection and
 checks each comes back as exactly one asset with exactly its paths;
 `test/reference.test.js` runs the same check when the folder exists.
@@ -237,13 +237,13 @@ Nothing in `app.css` hard-codes a colour; everything goes through tokens.
 - Built: parser, classifier/text heuristic, clustering, label pairing, session
   model with merge/split/manual/resize/rename/exclude, SVG+PNG export,
   manifest, contact sheet, review UI, CLI, regression tests (fixture only).
-- Validated against the 18 LiftCom reference crops (18/18).
+- Validated against the 18 hand-made reference crops (18/18).
 - Review UI restyled to match schemabuddy.dev (dark default + light toggle).
 - Browser upload (drop/pick), workspace with recent files, .zip download.
 - Undo/redo, request-origin checks, input validation, CI.
 - UI polish: list filter, copy SVG, pointer-anchored zoom, shortcut sheet,
   cached thumbnails, no canvas flicker. `serve --open`. Landing page in `docs/`
-  (client-free illustrations: no LiftCom/AES artwork or names).
-- Next: run against a real AES mockup source file (`.ai`/PDF, into
+  (illustrations only; no customer artwork or names).
+- Next: run against a real Illustrator mockup source file (`.ai`/PDF, into
   `test/fixtures/real/`) to check real spacing and labels; OCR naming for
   outlined labels.

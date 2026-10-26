@@ -1,7 +1,7 @@
 // Score detection against hand-made reference crops.
 //
-// Takes a folder of reference SVGs (one asset each, e.g. the LiftCom crops made
-// by hand in chat), lays them out on a mockup-style sheet with an outlined label
+// Takes a folder of reference SVGs (one asset each, e.g. the hand-made crops
+// from a real Illustrator mockup), lays them out on a mockup-style sheet with an outlined label
 // under each, runs detection, and reports per reference whether it came back
 // as exactly one asset with all of its paths and nothing else.
 //
